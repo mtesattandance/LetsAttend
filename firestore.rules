@@ -1,0 +1,116 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function tokenEmail() {
+      return request.auth.token.email;
+    }
+
+    /**
+     * Super admin gate (hard match on Auth email).
+     * MUST equal the super admin account email in Firebase Authentication.
+     * Change this string when you deploy.
+     */
+    function isSuperAdminEmail() {
+      return signedIn() && tokenEmail() == 'talibhassan1122@gmail.com';
+    }
+
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function userExists(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function myRole() {
+      return userDoc(request.auth.uid).data.role;
+    }
+
+    function isAdmin() {
+      return signedIn() && (
+        isSuperAdminEmail() ||
+        (userExists(request.auth.uid) && (
+          myRole() == 'admin' ||
+          myRole() == 'super_admin'
+        ))
+      );
+    }
+
+    function isEmployeeUserDoc(data) {
+      return data.role == 'employee';
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+
+      // Self-signup: employees only, email must match Auth.
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role == 'employee'
+        && request.resource.data.email == tokenEmail()
+        && request.resource.data.name is string
+        && request.resource.data.assignedSites is list;
+
+      // Super admin: full control.
+      allow update, delete: if isSuperAdminEmail();
+
+      // User: update own profile without changing role or assignments.
+      // Email in Firestore must match Auth token email (after email change / verify flow).
+      allow update: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.assignedSites == resource.data.assignedSites
+        && request.resource.data.email == tokenEmail();
+
+      /**
+       * Admin (non-super): may edit employee docs, and may promote an employee
+       * to `admin` (but cannot grant `super_admin`).
+       */
+      allow update: if signedIn()
+        && isAdmin()
+        && !isSuperAdminEmail()
+        && resource.data.role == 'employee'
+        && request.resource.data.role == 'employee';
+
+      // Promote employee -> admin (email + assignedSites must remain unchanged)
+      allow update: if signedIn()
+        && isAdmin()
+        && !isSuperAdminEmail()
+        && resource.data.role == 'employee'
+        && request.resource.data.role == 'admin'
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.assignedSites == resource.data.assignedSites;
+
+      allow delete: if false;
+    }
+
+    match /sites/{siteId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    /**
+     * All attendance writes go through Next.js API routes (Firebase Admin).
+     * Clients may read their own rows or admins read all.
+     */
+    match /attendance/{docId} {
+      allow read: if signedIn()
+        && (resource.data.workerId == request.auth.uid || isAdmin());
+      allow write: if false;
+    }
+
+    match /live_tracking/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
