@@ -1,9 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { APP_VENDOR } from "@/lib/constants";
+import { MtesThemeMark } from "@/components/mtes-theme-mark";
 
 /** Light: MTES in brand blue (#2A3B8F); dark: red (logo accent). “by Constcode” stays theme foreground. */
 const mtesWordClasses = "font-bold text-[#2A3B8F] dark:text-red-500";
@@ -85,14 +85,11 @@ export function MtesBrandLockup({
 
   if (isHeader) {
     return (
-      <div className={cn("flex min-w-0 items-center gap-2 md:gap-2.5", className)}>
+      <div className={cn("flex min-w-0 items-center gap-2.5 md:gap-3", className)}>
         {showLogo ? (
-          <Image
-            src="/branding/mtes-logo.png"
-            alt=""
-            width={72}
-            height={56}
-            className="hidden h-9 w-auto shrink-0 object-contain md:block"
+          <MtesThemeMark
+            className="h-10 w-10 shrink-0 sm:h-11 sm:w-11 md:h-[3.35rem] md:w-[3.35rem]"
+            size={160}
           />
         ) : null}
         <div className="min-w-0">{stackedTitle}</div>
@@ -104,13 +101,7 @@ export function MtesBrandLockup({
     return (
       <div className={cn("flex min-w-0 items-center gap-2.5", className)}>
         {showLogo ? (
-          <Image
-            src="/branding/mtes-logo.png"
-            alt="MTES"
-            width={100}
-            height={72}
-            className="h-12 w-auto shrink-0 object-contain"
-          />
+          <MtesThemeMark className="h-[3.25rem] w-[3.25rem] shrink-0 sm:h-14 sm:w-14" size={160} />
         ) : null}
         <div className="min-w-0 flex-1">{stackedTitle}</div>
       </div>
@@ -120,12 +111,9 @@ export function MtesBrandLockup({
   return (
     <div className={cn("flex flex-col items-center text-center", className)}>
       {showLogo ? (
-        <Image
-          src="/branding/mtes-logo-full.png"
-          alt="MTES"
-          width={220}
-          height={160}
-          className="h-28 w-auto object-contain md:h-32"
+        <MtesThemeMark
+          className="h-28 w-28 object-contain md:h-32 md:w-32"
+          size={256}
           priority
         />
       ) : null}

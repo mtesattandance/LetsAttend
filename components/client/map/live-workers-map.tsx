@@ -232,6 +232,7 @@ function MapJumpToolbar({
             </label>
             <SearchableSelect
               value={workerPick}
+              suppressInitialFocus
               onValueChange={(v) => {
                 setWorkerPick(v);
                 if (v.startsWith("offsite:")) {
@@ -295,6 +296,7 @@ function MapJumpToolbar({
               </label>
               <SearchableSelect
                 value={sitePick}
+                suppressInitialFocus
                 onValueChange={(v) => {
                   setSitePick(v);
                   const s = jumpSites.find((x) => x.id === v);

@@ -31,6 +31,21 @@ body {
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
+/* Keep autofill readable in light + dark (WebKit yellow override). */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #18181b;
+  transition: background-color 9999s ease-out;
+  box-shadow: 0 0 0px 1000px #ffffff inset;
+}
+.dark input:-webkit-autofill,
+.dark input:-webkit-autofill:hover,
+.dark input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #fafafa;
+  box-shadow: 0 0 0px 1000px #09090b inset;
+}
+
 /* Landing gradient mesh */
 .hero-mesh {
   background:

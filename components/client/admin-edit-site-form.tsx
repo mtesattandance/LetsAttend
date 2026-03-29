@@ -297,12 +297,14 @@ export function AdminEditSiteForm({
             value={workdayStartUtc}
             onChange={setWorkdayStartUtc}
             allowEmpty
+            variant="dark"
           />
           <UtcTimePicker
             id={`edit-auto-checkout-${site.id}`}
             label="Auto check-out after (NPT)"
             value={autoCheckoutUtc}
             onChange={setAutoCheckoutUtc}
+            variant="dark"
           />
         </div>
         <p className="text-xs text-zinc-500">

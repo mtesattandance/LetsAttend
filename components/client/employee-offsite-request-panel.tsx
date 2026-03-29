@@ -11,6 +11,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { formFieldLabelClass } from "@/components/ui/input";
+import { DateField } from "@/components/ui/date-field";
+import { Textarea } from "@/components/ui/textarea";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import { calendarDateKeyInTimeZone } from "@/lib/date/calendar-day-key";
 import { normalizeTimeZoneId } from "@/lib/date/time-zone";
@@ -18,6 +21,7 @@ import { toast } from "sonner";
 import { UtcTimePicker } from "@/components/client/utc-time-picker";
 import { getGpsFix } from "@/lib/client/geolocation";
 import { formatWallHm12h } from "@/lib/time/format-wall-time";
+import { cn } from "@/lib/utils";
 
 type Assignee = { id: string; name: string; email: string; role: string };
 
@@ -153,18 +157,13 @@ export function EmployeeOffsiteRequestPanel() {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-zinc-400">Work date</span>
-          <input
-            type="date"
-            className="rounded-xl border border-white/10 bg-black/40 px-3 py-2"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
+        <label className="flex flex-col gap-1.5">
+          <span className={formFieldLabelClass}>Work date</span>
+          <DateField value={date} onChange={setDate} id="offsite-work-date" />
         </label>
 
         <div>
-          <span className="text-sm text-zinc-400">Assignee (admin)</span>
+          <span className={cn("mb-1.5 block", formFieldLabelClass)}>Assignee (admin)</span>
           <SearchableSelect
             value={assigneeUid}
             onValueChange={setAssigneeUid}
@@ -174,15 +173,13 @@ export function EmployeeOffsiteRequestPanel() {
             }))}
             emptyLabel="— Select admin —"
             searchPlaceholder="Search admins…"
-            triggerClassName="mt-1 h-10 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
             listClassName="max-h-[min(280px,50vh)]"
           />
         </div>
 
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-zinc-400">Reason</span>
-          <textarea
-            className="min-h-[88px] rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
+        <label className="flex flex-col gap-1.5">
+          <span className={formFieldLabelClass}>Reason</span>
+          <Textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="Where you’re going and what you’ll do…"
@@ -195,14 +192,14 @@ export function EmployeeOffsiteRequestPanel() {
             label="Planned start (NPT)"
             value={workStartHm}
             onChange={setWorkStartHm}
-            variant="dark"
+            variant="light"
           />
           <UtcTimePicker
             id="offsite-end"
             label="Planned end (NPT)"
             value={workEndHm}
             onChange={setWorkEndHm}
-            variant="dark"
+            variant="light"
           />
         </div>
 
@@ -210,8 +207,8 @@ export function EmployeeOffsiteRequestPanel() {
           {busy ? "Getting location & sending…" : "Submit off-site request"}
         </Button>
 
-        <div className="border-t border-white/10 pt-4">
-          <p className="text-sm font-medium text-zinc-300">Your requests</p>
+        <div className="border-t border-zinc-200 pt-4 dark:border-white/10">
+          <p className={cn("text-sm font-medium text-zinc-800 dark:text-zinc-300")}>Your requests</p>
           <ul className="mt-3 space-y-3">
             {requests.map((r) => {
               const dispStart =
@@ -225,44 +222,52 @@ export function EmployeeOffsiteRequestPanel() {
               return (
                 <li
                   key={r.id}
-                  className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-zinc-300"
+                  className={cn(
+                    "rounded-xl border p-3 text-sm",
+                    "border-zinc-200 bg-zinc-50/80 text-zinc-800",
+                    "dark:border-white/10 dark:bg-black/20 dark:text-zinc-300"
+                  )}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-mono text-[10px] text-zinc-500">{r.id}</span>
-                    <span className="text-xs capitalize text-amber-200/90">{r.status ?? "?"}</span>
+                    <span className="font-mono text-[10px] text-zinc-500 dark:text-zinc-500">{r.id}</span>
+                    <span className="text-xs capitalize text-amber-800 dark:text-amber-200/90">
+                      {r.status ?? "?"}
+                    </span>
                   </div>
-                  <p className="mt-2 text-xs text-zinc-500">
-                    Date <span className="text-zinc-300">{r.date ?? "—"}</span>
+                  <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-500">
+                    Date <span className="text-zinc-900 dark:text-zinc-300">{r.date ?? "—"}</span>
                   </p>
-                  <p className="mt-1 text-xs">
+                  <p className="mt-1 text-xs text-zinc-700 dark:text-zinc-300">
                     Assignee:{" "}
-                    <strong className="text-zinc-200">
+                    <strong className="font-medium text-zinc-900 dark:text-zinc-200">
                       {r.assigneeAdminName || r.assigneeAdminEmail || r.assigneeAdminUid || "—"}
                     </strong>
                   </p>
                   <p className="mt-1 text-xs">
                     Window:{" "}
-                    <span className="font-mono text-cyan-200/90">
+                    <span className="font-mono text-cyan-800 dark:text-cyan-200/90">
                       {formatWallHm12h(dispStart)} → {formatWallHm12h(dispEnd)}
                     </span>{" "}
                     (NPT)
                   </p>
-                  <div className="mt-2 space-y-1 border-t border-white/5 pt-2">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                  <div className="mt-2 space-y-1 border-t border-zinc-200/80 pt-2 dark:border-white/5">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-500">
                       Request location (when you submitted)
                     </p>
-                    <p className="font-mono text-xs text-zinc-400">{fmtGps(r.requestGps ?? null)}</p>
-                    <p className="text-[11px] text-zinc-500">
+                    <p className="font-mono text-xs text-zinc-600 dark:text-zinc-400">
+                      {fmtGps(r.requestGps ?? null)}
+                    </p>
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-500">
                       Location is shown to admins on the live map only.
                     </p>
                   </div>
-                  {r.reason ? <p className="mt-2 text-zinc-400">{r.reason}</p> : null}
+                  {r.reason ? <p className="mt-2 text-zinc-600 dark:text-zinc-400">{r.reason}</p> : null}
                 </li>
               );
             })}
           </ul>
           {requests.length === 0 ? (
-            <p className="mt-2 text-xs text-zinc-500">No requests yet.</p>
+            <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-500">No requests yet.</p>
           ) : null}
         </div>
       </CardContent>

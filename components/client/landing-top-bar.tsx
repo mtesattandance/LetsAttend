@@ -15,14 +15,17 @@ export function LandingTopBar() {
     <div className="flex items-center gap-2 sm:gap-3">
       <ThemeToggle />
       {loading ? (
-        <div className="h-9 w-36 animate-pulse rounded-full bg-white/10" aria-hidden />
+        <div
+          className="h-9 w-36 animate-pulse rounded-full bg-zinc-200/90 dark:bg-white/10"
+          aria-hidden
+        />
       ) : user ? (
         <>
           <NotificationsDropdown />
           <UserAccountDropdown user={user} />
         </>
       ) : (
-        <Button variant="secondary" asChild>
+        <Button variant="secondary" size="sm" className="shrink-0 font-semibold shadow-sm" asChild>
           <Link href="/login">Sign in</Link>
         </Button>
       )}

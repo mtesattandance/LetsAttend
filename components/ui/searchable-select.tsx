@@ -42,6 +42,10 @@ export type SearchableSelectProps = {
   popoverModal?: boolean;
   /** Hide chevron (e.g. compact time pickers). */
   showChevron?: boolean;
+  /** When true, do not move focus into the popover on open (e.g. map overlays). Default: focus search for reliable selection. */
+  suppressInitialFocus?: boolean;
+  /** Forward to cmdk `Command` — set false for small fixed lists (e.g. hour/minute). */
+  shouldFilter?: boolean;
 };
 
 export function SearchableSelect({
@@ -65,6 +69,8 @@ export function SearchableSelect({
   listClassName,
   popoverModal = true,
   showChevron = true,
+  suppressInitialFocus = false,
+  shouldFilter = true,
 }: SearchableSelectProps) {
   const [open, setOpen] = React.useState(false);
 
@@ -91,10 +97,10 @@ export function SearchableSelect({
             aria-label={ariaLabel}
             disabled={disabled}
             className={cn(
-              "h-auto min-h-10 w-full rounded-xl border border-zinc-200/90 bg-white/90 px-3 py-2 font-normal text-foreground hover:bg-zinc-50",
-              "dark:border-white/10 dark:bg-black/40 dark:hover:bg-black/50",
+              "h-auto min-h-10 w-full rounded-xl border border-zinc-200/90 bg-white px-3 py-2 font-normal text-zinc-900 hover:bg-zinc-50",
+              "dark:border-white/10 dark:bg-zinc-950/80 dark:text-zinc-50 dark:hover:bg-zinc-900/80",
               showChevron ? "justify-between" : "justify-center",
-              !value && includeEmpty && "text-zinc-500",
+              !value && includeEmpty && "text-zinc-500 dark:text-zinc-400",
               triggerClassName
             )}
           >
@@ -117,9 +123,9 @@ export function SearchableSelect({
         side={side}
         sideOffset={sideOffset}
         className={cn("p-0", contentClassName, popoverContentClassName)}
-        onOpenAutoFocus={(e) => e.preventDefault()}
+        onOpenAutoFocus={suppressInitialFocus ? (e) => e.preventDefault() : undefined}
       >
-        <Command>
+        <Command shouldFilter={shouldFilter}>
           <CommandInput placeholder={searchPlaceholder} />
           <CommandList className={listClassName}>
             <CommandEmpty>{emptySearchMessage}</CommandEmpty>

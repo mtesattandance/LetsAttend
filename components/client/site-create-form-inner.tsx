@@ -27,7 +27,7 @@ export function SiteCreateFormInner({
   const [latitude, setLatitude] = React.useState("");
   const [longitude, setLongitude] = React.useState("");
   const [radius, setRadius] = React.useState("80");
-  const [workdayStartUtc, setWorkdayStartUtc] = React.useState("");
+  const [workdayStartUtc, setWorkdayStartUtc] = React.useState("09:00");
   const [autoCheckoutUtc, setAutoCheckoutUtc] = React.useState("23:59");
   const [msg, setMsg] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -146,7 +146,7 @@ export function SiteCreateFormInner({
       if (!res.ok) throw new Error(data.error ?? "Failed");
       setMsg(`Site created: ${data.id}`);
       setName("");
-      setWorkdayStartUtc("");
+      setWorkdayStartUtc("09:00");
       setAutoCheckoutUtc("23:59");
       setPlaceQuery("");
       setGeoResults([]);

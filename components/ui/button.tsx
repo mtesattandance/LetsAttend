@@ -11,8 +11,11 @@ const buttonVariants = cva(
         default:
           "bg-gradient-to-r from-violet-600 to-cyan-500 text-white shadow-lg shadow-cyan-500/20 hover:shadow-cyan-400/40",
         secondary:
-          "border border-white/10 bg-white/5 text-foreground hover:bg-white/10 hover:border-cyan-400/30",
-        ghost: "hover:bg-white/5 text-foreground",
+          "border border-zinc-300 bg-white text-zinc-900 shadow-sm hover:bg-zinc-50 hover:border-zinc-400 dark:border-white/10 dark:bg-white/5 dark:text-foreground dark:hover:bg-white/10 dark:hover:border-cyan-400/35",
+        outline:
+          "border-2 border-zinc-300 bg-white text-zinc-900 shadow-sm hover:border-cyan-500/60 hover:bg-zinc-50 hover:shadow-md dark:border-white/15 dark:bg-zinc-950/40 dark:text-foreground dark:hover:border-cyan-400/45 dark:hover:bg-white/10",
+        ghost:
+          "text-zinc-800 hover:bg-zinc-100 dark:text-foreground dark:hover:bg-white/5",
         destructive: "bg-red-600 text-white hover:bg-red-500",
       },
       size: {

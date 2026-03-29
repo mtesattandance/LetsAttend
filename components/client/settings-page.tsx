@@ -17,6 +17,8 @@ import { useDashboardUser } from "@/components/client/dashboard-user-context";
 import { cn } from "@/lib/utils";
 import { SettingsProfileEditor } from "@/components/client/settings-profile-editor";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input, formFieldLabelClass } from "@/components/ui/input";
+import { formatRoleDisplay, roleBadgeClassNames } from "@/lib/profile/role-badge";
 
 const DELETE_PHRASE = "DELETE MY ACCOUNT";
 
@@ -95,10 +97,15 @@ export function SettingsPage() {
                     {nameToInitials(user.name)}
                   </span>
                   <div className="min-w-0 flex-1 space-y-0.5">
-                    <p className="truncate text-lg font-medium">{user.name}</p>
-                    <p className="truncate text-sm text-zinc-400">{user.email}</p>
-                    <p className="text-xs capitalize text-zinc-500">
-                      Role: <span className="text-zinc-300">{user.role}</span>
+                    <p className="truncate text-lg font-medium text-zinc-900 dark:text-zinc-50">
+                      {user.name}
+                    </p>
+                    <p className="truncate text-sm text-zinc-600 dark:text-zinc-400">{user.email}</p>
+                    <p className="flex flex-wrap items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+                      <span>Role:</span>
+                      <span className={roleBadgeClassNames(user.role)}>
+                        {formatRoleDisplay(user.role)}
+                      </span>
                     </p>
                   </div>
                 </div>
@@ -107,33 +114,37 @@ export function SettingsPage() {
           </Card>
 
           <div>
-            <h2 className="mb-3 text-sm font-medium text-zinc-400">Edit profile</h2>
+            <h2 className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-400">Edit profile</h2>
             <SettingsProfileEditor />
           </div>
         </div>
 
-        <Card className="border-red-500/25 lg:sticky lg:top-6 lg:self-start">
+        <Card className="border-red-200 dark:border-red-500/25 lg:sticky lg:top-6 lg:self-start">
           <CardHeader>
-            <CardTitle className="text-red-400">Danger zone</CardTitle>
+            <CardTitle className="text-red-700 dark:text-red-400">Danger zone</CardTitle>
             <CardDescription>
               Permanently delete your account, Firestore profile, attendance
               history, and live tracking data. This cannot be undone.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-zinc-400">
-                Type <strong className="text-zinc-200">{DELETE_PHRASE}</strong> to
-                confirm
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className={formFieldLabelClass}>
+                Type{" "}
+                <strong className="font-bold text-zinc-950 dark:text-zinc-100">{DELETE_PHRASE}</strong>{" "}
+                to confirm
               </span>
-              <input
-                className="rounded-xl border border-white/10 bg-black/40 px-3 py-2"
+              <Input
                 value={phrase}
                 onChange={(e) => setPhrase(e.target.value)}
                 autoComplete="off"
+                placeholder={DELETE_PHRASE}
+                className="font-mono text-sm"
               />
             </label>
-            {deleteMsg ? <p className="text-sm text-red-400">{deleteMsg}</p> : null}
+            {deleteMsg ? (
+              <p className="text-sm font-medium text-red-700 dark:text-red-400">{deleteMsg}</p>
+            ) : null}
             <Button
               type="button"
               variant="destructive"

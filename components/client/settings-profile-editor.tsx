@@ -19,6 +19,7 @@ import {
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase/client";
 import { useDashboardUser } from "@/components/client/dashboard-user-context";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input, formFieldLabelClass } from "@/components/ui/input";
 
 function hasEmailPasswordProvider(): boolean {
   const u = getFirebaseAuth().currentUser;
@@ -175,15 +176,13 @@ export function SettingsProfileEditor() {
           <CardDescription>Updates your display name in MTESAttandance.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-zinc-400">Full name</span>
-            <input
-              className="rounded-xl border border-white/10 bg-black/40 px-3 py-2"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className={formFieldLabelClass}>Full name</span>
+            <Input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
           </label>
-          {nameMsg ? <p className="text-sm text-zinc-400">{nameMsg}</p> : null}
+          {nameMsg ? (
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">{nameMsg}</p>
+          ) : null}
           <Button type="button" disabled={nameBusy} onClick={() => void saveName()}>
             {nameBusy ? "Saving…" : "Save name"}
           </Button>
@@ -200,27 +199,27 @@ export function SettingsProfileEditor() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <p className="text-xs text-zinc-500">Current: {user.email}</p>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-zinc-400">New email</span>
-            <input
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className={formFieldLabelClass}>New email</span>
+            <Input
               type="email"
-              className="rounded-xl border border-white/10 bg-black/40 px-3 py-2"
               value={emailNew}
               onChange={(e) => setEmailNew(e.target.value)}
               autoComplete="email"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-zinc-400">Current password</span>
-            <input
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className={formFieldLabelClass}>Current password</span>
+            <Input
               type="password"
-              className="rounded-xl border border-white/10 bg-black/40 px-3 py-2"
               value={emailPwd}
               onChange={(e) => setEmailPwd(e.target.value)}
               autoComplete="current-password"
             />
           </label>
-          {emailMsg ? <p className="text-sm text-cyan-400/90">{emailMsg}</p> : null}
+          {emailMsg ? (
+            <p className="text-sm font-medium text-cyan-800 dark:text-cyan-300">{emailMsg}</p>
+          ) : null}
           <Button type="button" variant="secondary" disabled={emailBusy} onClick={() => void changeEmail()}>
             {emailBusy ? "Sending…" : "Send verification to new email"}
           </Button>
@@ -236,37 +235,36 @@ export function SettingsProfileEditor() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-zinc-400">Current password</span>
-            <input
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className={formFieldLabelClass}>Current password</span>
+            <Input
               type="password"
-              className="rounded-xl border border-white/10 bg-black/40 px-3 py-2"
               value={pwdCurrent}
               onChange={(e) => setPwdCurrent(e.target.value)}
               autoComplete="current-password"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-zinc-400">New password</span>
-            <input
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className={formFieldLabelClass}>New password</span>
+            <Input
               type="password"
-              className="rounded-xl border border-white/10 bg-black/40 px-3 py-2"
               value={pwdNew}
               onChange={(e) => setPwdNew(e.target.value)}
               autoComplete="new-password"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-zinc-400">Confirm new password</span>
-            <input
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className={formFieldLabelClass}>Confirm new password</span>
+            <Input
               type="password"
-              className="rounded-xl border border-white/10 bg-black/40 px-3 py-2"
               value={pwdConfirm}
               onChange={(e) => setPwdConfirm(e.target.value)}
               autoComplete="new-password"
             />
           </label>
-          {pwdMsg ? <p className="text-sm text-zinc-400">{pwdMsg}</p> : null}
+          {pwdMsg ? (
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">{pwdMsg}</p>
+          ) : null}
           <Button type="button" variant="secondary" disabled={pwdBusy} onClick={() => void changePassword()}>
             {pwdBusy ? "Updating…" : "Update password"}
           </Button>

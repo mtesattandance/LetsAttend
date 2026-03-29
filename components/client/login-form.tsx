@@ -8,6 +8,7 @@ import {
   signInWithEmailAndPassword,
   signInWithPopup,
 } from "firebase/auth";
+import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -16,13 +17,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input, formFieldLabelClass } from "@/components/ui/input";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import { ensureEmployeeUserDoc } from "@/lib/firebase/ensure-employee-user-doc";
+import { cn } from "@/lib/utils";
 
 export function LoginForm() {
   const router = useRouter();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [showPassword, setShowPassword] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
 
@@ -120,29 +124,46 @@ export function LoginForm() {
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <form className="flex flex-col gap-4" onSubmit={(e) => void submit(e)}>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-zinc-400">Email</span>
-            <input
+          <label className="flex flex-col gap-1.5">
+            <span className={formFieldLabelClass}>Email</span>
+            <Input
               type="email"
               required
               autoComplete="email"
-              className="rounded-xl border border-zinc-200/90 bg-white px-3 py-2 text-zinc-900 dark:border-white/10 dark:bg-black/40 dark:text-inherit"
+              placeholder="you@company.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-zinc-400">Password</span>
-            <input
-              type="password"
-              required
-              autoComplete="current-password"
-              className="rounded-xl border border-zinc-200/90 bg-white px-3 py-2 text-zinc-900 dark:border-white/10 dark:bg-black/40 dark:text-inherit"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+          <label className="flex flex-col gap-1.5">
+            <span className={formFieldLabelClass}>Password</span>
+            <div className="relative">
+              <Input
+                type={showPassword ? "text" : "password"}
+                required
+                autoComplete="current-password"
+                placeholder="••••••••"
+                className="pr-11"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                className={cn(
+                  "absolute right-1 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-lg",
+                  "text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900",
+                  "dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100"
+                )}
+                onClick={() => setShowPassword((s) => !s)}
+              >
+                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              </button>
+            </div>
           </label>
-          {error ? <p className="text-sm text-red-400">{error}</p> : null}
+          {error ? (
+            <p className="text-sm font-medium text-red-700 dark:text-red-400">{error}</p>
+          ) : null}
           <Button type="submit" disabled={busy}>
             {busy ? "Signing in…" : "Sign in"}
           </Button>
@@ -150,10 +171,10 @@ export function LoginForm() {
 
         <div className="relative py-1">
           <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t border-zinc-200/80 dark:border-white/10" />
+            <span className="w-full border-t border-zinc-200/90 dark:border-white/10" />
           </div>
           <div className="relative flex justify-center text-xs">
-            <span className="bg-background px-2 text-zinc-500">OR</span>
+            <span className="bg-card px-2 text-zinc-500 dark:text-zinc-400">OR</span>
           </div>
         </div>
 
@@ -161,9 +182,12 @@ export function LoginForm() {
           {busy ? "Working…" : "Continue with Google"}
         </Button>
 
-        <p className="text-center text-sm text-zinc-500">
+        <p className="text-center text-sm text-zinc-600 dark:text-zinc-400">
           No account?{" "}
-          <Link href="/signup" className="text-cyan-400 hover:underline">
+          <Link
+            href="/signup"
+            className="font-medium text-cyan-700 underline-offset-2 hover:underline dark:text-cyan-400"
+          >
             Create one
           </Link>
         </p>

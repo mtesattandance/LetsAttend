@@ -9,6 +9,9 @@ import { from24hUtc, to24hUtc } from "@/lib/time/utc-12h";
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 1);
 const MINUTES = Array.from({ length: 60 }, (_, i) => i);
 
+/** Above `EmployeeCustomSiteModal` (z-8000) and other overlays so hour/minute lists receive clicks. */
+const TIME_POPOVER_Z = "z-[10000]";
+
 type Props = {
   id?: string;
   label: string;
@@ -123,6 +126,7 @@ export function UtcTimePicker({
               : "border-white/10 bg-zinc-950/80 text-foreground"
           )}
           listClassName="max-h-[min(280px,45vh)]"
+          popoverContentClassName={TIME_POPOVER_Z}
         />
         <span className={cn(light ? "text-zinc-500" : "text-zinc-500")}>:</span>
         <SearchableSelect
@@ -144,6 +148,7 @@ export function UtcTimePicker({
               : "border-white/10 bg-zinc-950/80 text-foreground"
           )}
           listClassName="max-h-[min(280px,45vh)]"
+          popoverContentClassName={TIME_POPOVER_Z}
         />
         <div className="flex min-w-[7rem] flex-1 gap-1">
           {(["AM", "PM"] as const).map((p) => (

@@ -10,6 +10,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { DateField } from "@/components/ui/date-field";
+import { formFieldLabelClass } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import { getFirestoreSeconds } from "@/lib/client/firestore-timestamp";
 import { OvertimeAttendanceCapture } from "@/components/client/overtime-attendance-capture";
@@ -204,27 +207,26 @@ export function EmployeeOvertimeRequestPanel() {
           onRefreshSites={loadSites}
           blankOptionLabel="None — admin will assign on approve"
         />
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-zinc-400">Work date</span>
-          <p className="text-xs text-zinc-500">
+        <div className="flex flex-col gap-1.5">
+          <span className={formFieldLabelClass}>Work date</span>
+          <p className="text-xs text-zinc-600 dark:text-zinc-500">
             The day you will work overtime (same calendar day as check-in and check-out). Default is
             today:{" "}
-            <span className="font-mono text-zinc-400">
+            <span className="font-mono text-zinc-700 dark:text-zinc-400">
               {calendarDateKeyInTimeZone(new Date(), displayTz)}
             </span>
             .
           </p>
-          <input
-            type="date"
-            className="rounded-xl border border-white/10 bg-black/40 px-3 py-2"
+          <DateField
+            id="overtime-work-date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={setDate}
+            aria-label="Work date"
           />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-zinc-400">Reason</span>
-          <textarea
-            className="min-h-[88px] rounded-xl border border-white/10 bg-black/40 px-3 py-2"
+        </div>
+        <label className="flex flex-col gap-1.5">
+          <span className={formFieldLabelClass}>Reason</span>
+          <Textarea
             placeholder="What work do you need to continue after hours?"
             value={reason}
             onChange={(e) => setReason(e.target.value)}

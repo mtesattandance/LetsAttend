@@ -13,6 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input, formFieldLabelClass } from "@/components/ui/input";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import { ensureEmployeeUserDoc } from "@/lib/firebase/ensure-employee-user-doc";
 import { cn } from "@/lib/utils";
@@ -103,35 +104,37 @@ export function SignupForm() {
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <form className="flex flex-col gap-4" onSubmit={(e) => void submitEmailSignup(e)}>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-zinc-400">Full name</span>
-            <input
+          <label className="flex flex-col gap-1.5">
+            <span className={formFieldLabelClass}>Full name</span>
+            <Input
               required
-              className="rounded-xl border border-zinc-200/90 bg-white px-3 py-2 text-zinc-900 dark:border-white/10 dark:bg-black/40 dark:text-inherit"
+              autoComplete="name"
+              placeholder="Your name"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-zinc-400">Email</span>
-            <input
+          <label className="flex flex-col gap-1.5">
+            <span className={formFieldLabelClass}>Email</span>
+            <Input
               type="email"
               required
               autoComplete="email"
-              className="rounded-xl border border-zinc-200/90 bg-white px-3 py-2 text-zinc-900 dark:border-white/10 dark:bg-black/40 dark:text-inherit"
+              placeholder="you@company.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-zinc-400">Password</span>
+          <label className="flex flex-col gap-1.5">
+            <span className={formFieldLabelClass}>Password</span>
             <div className="relative">
-              <input
+              <Input
                 type={showPassword ? "text" : "password"}
                 required
                 minLength={8}
                 autoComplete="new-password"
-                className="w-full rounded-xl border border-zinc-200/90 bg-white py-2 pl-3 pr-11 text-zinc-900 dark:border-white/10 dark:bg-black/40 dark:text-inherit"
+                placeholder="At least 8 characters"
+                className="pr-11"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
@@ -140,7 +143,8 @@ export function SignupForm() {
                 aria-label={showPassword ? "Hide password" : "Show password"}
                 className={cn(
                   "absolute right-1 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-lg",
-                  "text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-200"
+                  "text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900",
+                  "dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100"
                 )}
                 onClick={() => setShowPassword((s) => !s)}
               >
@@ -149,7 +153,9 @@ export function SignupForm() {
             </div>
           </label>
 
-          {error ? <p className="text-sm text-red-400">{error}</p> : null}
+          {error ? (
+            <p className="text-sm font-medium text-red-700 dark:text-red-400">{error}</p>
+          ) : null}
           <Button type="submit" disabled={busy}>
             {busy ? "Creating…" : "Sign up with email"}
           </Button>
@@ -157,10 +163,10 @@ export function SignupForm() {
 
         <div className="relative py-1">
           <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t border-zinc-200/80 dark:border-white/10" />
+            <span className="w-full border-t border-zinc-200/90 dark:border-white/10" />
           </div>
           <div className="relative flex justify-center text-xs">
-            <span className="bg-background px-2 text-zinc-500">OR</span>
+            <span className="bg-card px-2 text-zinc-500 dark:text-zinc-400">OR</span>
           </div>
         </div>
 
@@ -168,9 +174,12 @@ export function SignupForm() {
           {busy ? "Working…" : "Continue with Google"}
         </Button>
 
-        <p className="text-center text-sm text-zinc-500">
+        <p className="text-center text-sm text-zinc-600 dark:text-zinc-400">
           Already have an account?{" "}
-          <Link href="/login" className="text-cyan-400 hover:underline">
+          <Link
+            href="/login"
+            className="font-medium text-cyan-700 underline-offset-2 hover:underline dark:text-cyan-400"
+          >
             Sign in
           </Link>
         </p>
