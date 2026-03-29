@@ -11,6 +11,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { CameraCapture, type CameraCaptureHandle } from "@/components/client/camera-capture";
+import {
+  SelfiePreviewWithRetake,
+  useResetCaptureWhenSiteChanges,
+  useRetakeSelfieCamera,
+} from "@/components/client/selfie-preview-with-retake";
 import { useDashboardUser } from "@/components/client/dashboard-user-context";
 import { OutOfSiteRadiusAlert } from "@/components/client/out-of-site-radius-alert";
 import { ResultModal } from "@/components/client/feedback-modals";
@@ -87,6 +92,17 @@ export function EmployeeCheckOutPanel({ proxyForUid }: { proxyForUid?: string } 
     setGps(null);
     setStreamReady(false);
   }, []);
+
+  useResetCaptureWhenSiteChanges(siteId, resetCaptureFlow);
+
+  const retakeSelfie = useRetakeSelfieCamera({
+    step,
+    selfie,
+    camRef,
+    setSelfie,
+    setStep,
+    setStreamReady,
+  });
 
   const uploadSelfie = async (dataUrl: string) => {
     const h = await authHeaders();
@@ -253,11 +269,10 @@ export function EmployeeCheckOutPanel({ proxyForUid }: { proxyForUid?: string } 
               onError={(err) => toast.error(err)}
             />
           ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <SelfiePreviewWithRetake
               src={selfie}
               alt="Check-out preview"
-              className="aspect-video w-full max-w-md rounded-xl border border-white/10 bg-black object-contain"
+              onRetake={retakeSelfie}
             />
           )}
         </div>

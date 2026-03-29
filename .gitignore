@@ -29,6 +29,9 @@ pnpm-debug.log*
 # typescript
 *.tsbuildinfo
 
+# Local Flutter mobile app (not committed; keep sources only on your machine or a separate repo)
+mtes_attendance_mobile/
+
 # ide
 .idea
 .vscode

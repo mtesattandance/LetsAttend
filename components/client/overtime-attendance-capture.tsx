@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { CameraCapture, type CameraCaptureHandle } from "@/components/client/camera-capture";
+import { SelfiePreviewWithRetake, useRetakeSelfieCamera } from "@/components/client/selfie-preview-with-retake";
 import { useDashboardUser } from "@/components/client/dashboard-user-context";
 import { OutOfSiteRadiusAlert } from "@/components/client/out-of-site-radius-alert";
 import { ResultModal } from "@/components/client/feedback-modals";
@@ -58,6 +59,15 @@ export function OvertimeAttendanceCapture({
   React.useEffect(() => {
     if (step === 0) setStreamReady(false);
   }, [step]);
+
+  const retakeSelfie = useRetakeSelfieCamera({
+    step,
+    selfie,
+    camRef,
+    setSelfie,
+    setStep,
+    setStreamReady,
+  });
 
   const uploadSelfie = async (dataUrl: string) => {
     const h = await authHeaders();
@@ -204,12 +214,7 @@ export function OvertimeAttendanceCapture({
             onError={(err) => toast.error(err)}
           />
         ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={selfie}
-            alt={title}
-            className="aspect-video w-full max-w-md rounded-xl border border-white/10 bg-black object-contain"
-          />
+          <SelfiePreviewWithRetake src={selfie} alt={title} onRetake={retakeSelfie} />
         )}
 
         {radiusError ? (
