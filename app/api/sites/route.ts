@@ -97,8 +97,9 @@ export async function GET(req: Request) {
     return NextResponse.json({
       sites: all,
       needsAssignment: assigned.length === 0,
+      assignedSiteIds: assigned,
     });
   }
 
-  return NextResponse.json({ sites: all });
+  return NextResponse.json({ sites: all, assignedSiteIds: [] });
 }

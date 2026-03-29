@@ -12,7 +12,7 @@ import {
   Tooltip,
   useMap,
 } from "react-leaflet";
-import { Maximize2, X } from "lucide-react";
+import { List, Maximize2, X } from "lucide-react";
 import {
   BasemapLayerControl,
   BasemapTileLayer,
@@ -89,14 +89,37 @@ function InvalidateSizeOn({ when }: { when: unknown }) {
   return null;
 }
 
+/** `max-width: 767px` — tighter jump card layout on phones. */
+function useIsNarrowJumpPanel() {
+  return React.useSyncExternalStore(
+    (onStoreChange) => {
+      if (typeof window === "undefined") return () => {};
+      const mq = window.matchMedia("(max-width: 767px)");
+      mq.addEventListener("change", onStoreChange);
+      return () => mq.removeEventListener("change", onStoreChange);
+    },
+    () =>
+      typeof window !== "undefined"
+        ? window.matchMedia("(max-width: 767px)").matches
+        : false,
+    () => false
+  );
+}
+
 function MapJumpToolbar({
   points,
   site,
   jumpSites,
+  narrowScreen,
+  panelOpen,
+  onPanelOpenChange,
 }: {
   points: LiveWorker[];
   site: SiteGeofence | null;
   jumpSites: JumpSite[] | undefined;
+  narrowScreen: boolean;
+  panelOpen: boolean;
+  onPanelOpenChange: (open: boolean) => void;
 }) {
   const map = useMap();
   const [workerPick, setWorkerPick] = React.useState("");
@@ -110,73 +133,159 @@ function MapJumpToolbar({
     [map]
   );
 
+  React.useEffect(() => {
+    if (!panelOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onPanelOpenChange(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [panelOpen, onPanelOpenChange]);
+
+  const showCard = panelOpen;
+  const showFab = !panelOpen;
+
+  const selectTriggerClass = cn(
+    "w-full rounded-md border border-white/10 bg-black/50 text-zinc-200",
+    narrowScreen
+      ? "h-8 px-2 py-1 text-[11px] leading-tight"
+      : "h-9 rounded-lg px-2 py-1.5 text-xs"
+  );
+
+  const cardClassName = cn(
+    "pointer-events-auto absolute right-3 top-14 z-[1001] flex flex-col border border-white/15 bg-zinc-950/95 shadow-lg backdrop-blur-sm",
+    narrowScreen
+      ? "w-[min(188px,calc(100vw-1.5rem))] max-h-[min(200px,34vh)] gap-1 overflow-y-auto rounded-lg p-1.5"
+      : "w-[min(220px,calc(100%-24px))] max-h-[min(300px,50vh)] gap-2 overflow-y-auto rounded-xl p-2.5 text-xs"
+  );
+
   return (
-    <div className="pointer-events-auto absolute right-3 top-14 z-[1000] flex w-[min(220px,calc(100%-24px))] flex-col gap-2 rounded-xl border border-white/15 bg-zinc-950/92 p-2.5 text-xs shadow-lg backdrop-blur-sm">
-      <div>
-        <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-          Go to worker
-        </label>
-        <SearchableSelect
-          value={workerPick}
-          onValueChange={(v) => {
-            setWorkerPick(v);
-            const p = points.find((x) => x.workerId === v);
-            if (p && Number.isFinite(p.latitude) && Number.isFinite(p.longitude)) {
-              flyTo(p.latitude, p.longitude, 18);
-            }
-          }}
-          options={points.map((p) => ({
-            value: p.workerId,
-            label: p.workerName?.trim() || p.workerId,
-          }))}
-          emptyLabel="— Select —"
-          searchPlaceholder="Search workers…"
-          triggerClassName="h-9 w-full rounded-lg border border-white/10 bg-black/50 px-2 py-1.5 text-xs text-zinc-200"
-          popoverContentClassName="z-[2200]"
-          popoverModal={false}
-          listClassName="max-h-[min(240px,40vh)]"
-        />
-      </div>
-      {site ? (
-        <Button
+    <>
+      {showFab ? (
+        <button
           type="button"
-          variant="secondary"
-          size="sm"
-          className="h-8 w-full text-xs"
-          onClick={() => flyTo(site.latitude, site.longitude, 16)}
+          className="pointer-events-auto absolute right-3 top-14 z-[1000] flex size-10 items-center justify-center rounded-lg border border-white/15 bg-zinc-950/92 text-cyan-100 shadow-lg backdrop-blur-sm transition-colors hover:bg-zinc-900/95 md:size-11 md:rounded-xl"
+          aria-expanded={false}
+          aria-controls="live-map-jump-panel"
+          onClick={() => onPanelOpenChange(true)}
+          title="Worker & site jump"
         >
-          Site center (this geofence)
-        </Button>
+          <List className={narrowScreen ? "size-4" : "size-5"} aria-hidden />
+        </button>
       ) : null}
-      {jumpSites && jumpSites.length > 0 ? (
-        <div>
-          <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-            Go to site
-          </label>
-          <SearchableSelect
-            value={sitePick}
-            onValueChange={(v) => {
-              setSitePick(v);
-              const s = jumpSites.find((x) => x.id === v);
-              if (s) flyTo(s.latitude, s.longitude, 15);
-            }}
-            options={jumpSites.map((s) => ({
-              value: s.id,
-              label: s.name,
-            }))}
-            emptyLabel="— Select —"
-            searchPlaceholder="Search sites…"
-            triggerClassName="h-9 w-full rounded-lg border border-white/10 bg-black/50 px-2 py-1.5 text-xs text-zinc-200"
-            popoverContentClassName="z-[2200]"
-            popoverModal={false}
-            listClassName="max-h-[min(240px,40vh)]"
-          />
+      {showCard ? (
+        <div
+          id="live-map-jump-panel"
+          role="dialog"
+          aria-label="Jump to worker or site"
+          className={cardClassName}
+        >
+          <div className="flex shrink-0 items-center justify-between gap-1.5 border-b border-white/10 pb-1.5">
+            <span
+              className={cn(
+                "font-semibold uppercase tracking-wide text-zinc-400",
+                narrowScreen ? "text-[9px]" : "text-[11px]"
+              )}
+            >
+              Jump to
+            </span>
+            <button
+              type="button"
+              className={cn(
+                "rounded-md text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-100",
+                narrowScreen ? "p-0.5" : "p-1"
+              )}
+              aria-label="Close panel"
+              onClick={() => onPanelOpenChange(false)}
+            >
+              <X className={narrowScreen ? "size-3.5" : "size-4"} />
+            </button>
+          </div>
+          <div>
+            <label
+              className={cn(
+                "mb-0.5 block font-medium uppercase tracking-wide text-zinc-500",
+                narrowScreen ? "text-[9px]" : "text-[10px]"
+              )}
+            >
+              Go to worker
+            </label>
+            <SearchableSelect
+              value={workerPick}
+              onValueChange={(v) => {
+                setWorkerPick(v);
+                const p = points.find((x) => x.workerId === v);
+                if (p && Number.isFinite(p.latitude) && Number.isFinite(p.longitude)) {
+                  flyTo(p.latitude, p.longitude, 18);
+                }
+              }}
+              options={points.map((p) => ({
+                value: p.workerId,
+                label: p.workerName?.trim() || p.workerId,
+              }))}
+              emptyLabel="— Select —"
+              searchPlaceholder="Search workers…"
+              triggerClassName={selectTriggerClass}
+              popoverContentClassName="z-[2200]"
+              popoverModal={false}
+              listClassName={narrowScreen ? "max-h-[min(160px,32vh)]" : "max-h-[min(240px,40vh)]"}
+            />
+          </div>
+          {site ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className={cn(
+                "w-full",
+                narrowScreen ? "h-7 text-[10px] leading-none" : "h-8 text-xs"
+              )}
+              onClick={() => flyTo(site.latitude, site.longitude, 16)}
+            >
+              Site center (this geofence)
+            </Button>
+          ) : null}
+          {jumpSites && jumpSites.length > 0 ? (
+            <div>
+              <label
+                className={cn(
+                  "mb-0.5 block font-medium uppercase tracking-wide text-zinc-500",
+                  narrowScreen ? "text-[9px]" : "text-[10px]"
+                )}
+              >
+                Go to site
+              </label>
+              <SearchableSelect
+                value={sitePick}
+                onValueChange={(v) => {
+                  setSitePick(v);
+                  const s = jumpSites.find((x) => x.id === v);
+                  if (s) flyTo(s.latitude, s.longitude, 15);
+                }}
+                options={jumpSites.map((s) => ({
+                  value: s.id,
+                  label: s.name,
+                }))}
+                emptyLabel="— Select —"
+                searchPlaceholder="Search sites…"
+                triggerClassName={selectTriggerClass}
+                popoverContentClassName="z-[2200]"
+                popoverModal={false}
+                listClassName={narrowScreen ? "max-h-[min(160px,32vh)]" : "max-h-[min(240px,40vh)]"}
+              />
+            </div>
+          ) : null}
+          <p
+            className={cn(
+              "leading-snug text-zinc-500",
+              narrowScreen ? "hidden" : "text-[10px]"
+            )}
+          >
+            Pan and zoom still work as usual. Labels show who each marker is.
+          </p>
         </div>
       ) : null}
-      <p className="text-[10px] leading-snug text-zinc-500">
-        Pan and zoom still work as usual. Labels show who each marker is.
-      </p>
-    </div>
+    </>
   );
 }
 
@@ -247,6 +356,9 @@ function LiveWorkersMapInner({
   const [site, setSite] = React.useState<SiteGeofence | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const isNarrowJump = useIsNarrowJumpPanel();
+  /** Collapsed by default on all sizes — use list icon to open (max map area). */
+  const [jumpPanelOpen, setJumpPanelOpen] = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -344,7 +456,14 @@ function LiveWorkersMapInner({
           <InvalidateSizeOn when={resizeSignal} />
           <BasemapTileLayer basemap={basemap} />
           <BasemapLayerControl value={basemap} onChange={setBasemap} />
-          <MapJumpToolbar points={points} site={site} jumpSites={jumpSites} />
+          <MapJumpToolbar
+            points={points}
+            site={site}
+            jumpSites={jumpSites}
+            narrowScreen={isNarrowJump}
+            panelOpen={jumpPanelOpen}
+            onPanelOpenChange={setJumpPanelOpen}
+          />
           {site ? (
             <Circle
               center={[site.latitude, site.longitude]}
