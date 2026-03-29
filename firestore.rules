@@ -10,11 +10,6 @@ service cloud.firestore {
       return request.auth.token.email;
     }
 
-    /**
-     * Super admin gate (hard match on Auth email).
-     * MUST equal the super admin account email in Firebase Authentication.
-     * Change this string when you deploy.
-     */
     function isSuperAdminEmail() {
       return signedIn() && tokenEmail() == 'talibhassan1122@gmail.com';
     }
@@ -41,14 +36,53 @@ service cloud.firestore {
       );
     }
 
-    function isEmployeeUserDoc(data) {
-      return data.role == 'employee';
+    function listOrEmpty(x) {
+      return x is list ? x : [];
+    }
+
+    function assignedSitesOverlap(ca, sa) {
+      let a = listOrEmpty(ca);
+      let b = listOrEmpty(sa);
+      return a.size() == 0 && b.size() == 0
+        || (a.size() > 0 && b.size() > 0 && a.hasAny(b));
+    }
+
+    /** Mirrors `lib/attendance/proxy-attendance.ts`. */
+    function isAdminRecordingFor(workerUid) {
+      let cr = userDoc(request.auth.uid).data.role;
+      let sr = userDoc(workerUid).data.role;
+      return (cr == 'admin' || cr == 'super_admin')
+        && (sr == 'employee' || sr == 'admin');
+    }
+
+    function employeePairOk(callerUid, workerUid) {
+      let c = userDoc(callerUid).data;
+      let s = userDoc(workerUid).data;
+      return c.role == 'employee' && s.role == 'employee'
+        && assignedSitesOverlap(c.assignedSites, s.assignedSites);
+    }
+
+    function canRecordAttendanceFor(callerUid, workerUid) {
+      return callerUid is string && workerUid is string
+        && userExists(callerUid) && userExists(workerUid)
+        && (callerUid == workerUid
+          || isAdminRecordingFor(workerUid)
+          || employeePairOk(callerUid, workerUid));
+    }
+
+    function attendanceIdMatchesData() {
+      return request.resource.data.workerId is string
+        && request.resource.data.date is string
+        && docId == request.resource.data.workerId + '_' + request.resource.data.date;
     }
 
     match /users/{userId} {
-      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+      allow read: if signedIn() && (
+        request.auth.uid == userId || isAdmin() ||
+        (userExists(request.auth.uid) && myRole() == 'employee'
+          && resource.data.role == 'employee')
+      );
 
-      // Self-signup: employees only, email must match Auth.
       allow create: if signedIn()
         && request.auth.uid == userId
         && request.resource.data.role == 'employee'
@@ -56,29 +90,22 @@ service cloud.firestore {
         && request.resource.data.name is string
         && request.resource.data.assignedSites is list;
 
-      // Super admin: full control.
       allow update, delete: if isSuperAdminEmail();
 
-      // User: update own profile without changing role or assignments.
-      // Email in Firestore must match Auth token email (after email change / verify flow).
+      // timeZone may change (device sync); other privileged fields stay fixed.
       allow update: if signedIn()
         && request.auth.uid == userId
         && request.resource.data.role == resource.data.role
         && request.resource.data.assignedSites == resource.data.assignedSites
-        && request.resource.data.timeZone == resource.data.timeZone
-        && request.resource.data.email == tokenEmail();
+        && request.resource.data.email == tokenEmail()
+        && request.resource.data.timeZone is string;
 
-      /**
-       * Admin (non-super): may edit employee docs, and may promote an employee
-       * to `admin` (but cannot grant `super_admin`).
-       */
       allow update: if signedIn()
         && isAdmin()
         && !isSuperAdminEmail()
         && resource.data.role == 'employee'
         && request.resource.data.role == 'employee';
 
-      // Promote employee -> admin (email + assignedSites must remain unchanged)
       allow update: if signedIn()
         && isAdmin()
         && !isSuperAdminEmail()
@@ -87,7 +114,7 @@ service cloud.firestore {
         && request.resource.data.email == resource.data.email
         && request.resource.data.assignedSites == resource.data.assignedSites;
 
-      allow delete: if false;
+      allow delete: if signedIn() && (request.auth.uid == userId || isSuperAdminEmail());
     }
 
     match /sites/{siteId} {
@@ -95,19 +122,42 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    /**
-     * All attendance writes go through Next.js API routes (Firebase Admin).
-     * Clients may read their own rows or admins read all.
-     */
     match /attendance/{docId} {
       allow read: if signedIn()
         && (resource.data.workerId == request.auth.uid || isAdmin());
-      allow write: if false;
+
+      allow create: if signedIn()
+        && attendanceIdMatchesData()
+        && canRecordAttendanceFor(request.auth.uid, request.resource.data.workerId);
+
+      allow update: if signedIn()
+        && resource.data.workerId == request.resource.data.workerId
+        && attendanceIdMatchesData()
+        && canRecordAttendanceFor(request.auth.uid, resource.data.workerId);
+
+      allow delete: if signedIn() && resource.data.workerId == request.auth.uid;
     }
 
     match /live_tracking/{userId} {
       allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
-      allow write: if false;
+      allow create, update: if signedIn() && request.auth.uid == userId;
+      allow delete: if signedIn() && request.auth.uid == userId;
+    }
+
+    match /notifications/{id} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow create: if signedIn() && isAdmin();
+      allow update: if signedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /overtimeRequests/{id} {
+      allow read: if signedIn()
+        && (resource.data.workerId == request.auth.uid || isAdmin());
+      allow create: if signedIn()
+        && request.resource.data.workerId == request.auth.uid;
+      allow update: if signedIn() && isAdmin();
+      allow delete: if false;
     }
 
     match /{document=**} {
