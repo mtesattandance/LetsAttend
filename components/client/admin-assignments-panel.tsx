@@ -13,8 +13,10 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { TableRowsSkeleton } from "@/components/client/dashboard-skeletons";
 import { getFirebaseAuth } from "@/lib/firebase/client";
+import { AssignWorkSitesModal } from "@/components/client/assign-work-sites-modal";
 import { ConfirmActionModal, ResultModal } from "@/components/client/feedback-modals";
 import { toast } from "sonner";
 
@@ -39,6 +41,9 @@ export function AdminAssignmentsPanel() {
   } | null>(null);
   const [confirmClear, setConfirmClear] = React.useState<UserRow | null>(null);
   const [saving, setSaving] = React.useState(false);
+  const [assignWorker, setAssignWorker] = React.useState<UserRow | null>(null);
+  const [addAssignExpanded, setAddAssignExpanded] = React.useState(false);
+  const [pickWorkerId, setPickWorkerId] = React.useState("");
 
   const authHeaders = React.useCallback(async () => {
     const auth = getFirebaseAuth();
@@ -143,8 +148,28 @@ export function AdminAssignmentsPanel() {
     );
   }
 
+  const openAssignModal = () => {
+    const w = employees.find((e) => e.id === pickWorkerId);
+    if (!w) {
+      toast.message("Select an employee first.");
+      return;
+    }
+    setAssignWorker(w);
+    setAddAssignExpanded(false);
+    setPickWorkerId("");
+  };
+
   return (
     <div className="space-y-6">
+      <AssignWorkSitesModal
+        worker={assignWorker}
+        open={assignWorker != null}
+        onOpenChange={(open) => {
+          if (!open) setAssignWorker(null);
+        }}
+        onSaved={() => void load()}
+      />
+
       {confirmRemove ? (
         <ConfirmActionModal
           open
@@ -216,15 +241,59 @@ export function AdminAssignmentsPanel() {
       ) : null}
 
       <Card>
-        <CardHeader>
-          <CardTitle>Who has what</CardTitle>
-          <CardDescription>
-            Remove individual sites or clear all for a worker (they get a notification on save). For
-            full edit, use Workers → Assign. Open Work normally shows every site they still have;
-            assignment-focused check-in uses Go to Work or the employee Assigned tab.
-          </CardDescription>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle>Who has what</CardTitle>
+            <CardDescription>
+              Remove individual sites or clear all for a worker (they get a notification on save). Use
+              <strong className="mx-1 text-zinc-400">Add assignment</strong> for the same site picker as on
+              Workers → Assign. Open Work lists every site they have; Go to Work / Assigned focus on these
+              sites.
+            </CardDescription>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="shrink-0"
+            onClick={() => {
+              setAddAssignExpanded((e) => !e);
+              setPickWorkerId("");
+            }}
+          >
+            {addAssignExpanded ? "Close form" : "Add assignment"}
+          </Button>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="space-y-4">
+          {addAssignExpanded ? (
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+              <p className="text-sm font-medium text-zinc-200">Assign sites to an employee</p>
+              <p className="mt-1 text-xs text-zinc-500">
+                Same checklist as the Workers table — tick sites and save; the worker is notified.
+              </p>
+              <div className="mt-3">
+                <span className="text-xs text-zinc-500">Employee</span>
+                <SearchableSelect
+                  value={pickWorkerId}
+                  onValueChange={setPickWorkerId}
+                  options={employees.map((e) => ({
+                    value: e.id,
+                    label: `${e.name?.trim() ? e.name : e.email} (${e.email})`,
+                  }))}
+                  emptyLabel="— Select employee —"
+                  searchPlaceholder="Search employees…"
+                  triggerClassName="mt-1 h-10 w-full rounded-xl border border-white/10 bg-black/40 px-3 text-sm"
+                  popoverContentClassName="z-[1400]"
+                  listClassName="max-h-[min(280px,50vh)]"
+                />
+              </div>
+              <Button type="button" className="mt-3" size="sm" onClick={openAssignModal}>
+                Choose sites…
+              </Button>
+            </div>
+          ) : null}
+
+          <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-zinc-200/80 text-xs uppercase tracking-wide text-zinc-500 dark:border-white/10">
@@ -301,6 +370,7 @@ export function AdminAssignmentsPanel() {
           {employees.length === 0 ? (
             <p className="py-6 text-sm text-zinc-500">No employee accounts found.</p>
           ) : null}
+          </div>
         </CardContent>
       </Card>
     </div>

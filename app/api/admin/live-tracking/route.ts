@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { DateTime } from "luxon";
 import { adminDb } from "@/lib/firebase/admin";
 import { requireBearerUser } from "@/lib/auth/verify-request";
 import { jsonError } from "@/lib/api/json-error";
 import { haversineMeters } from "@/lib/geo/haversine";
 import { isSuperAdminDecoded, isSuperAdminUserRow } from "@/lib/auth/super-admin";
+import { DEFAULT_ATTENDANCE_TIME_ZONE } from "@/lib/date/time-zone";
 
 export const runtime = "nodejs";
 
@@ -25,6 +27,16 @@ type LiveWorkerRow = {
   longitude: number;
   accuracyM: number | undefined;
   lastUpdatedMs: number | null;
+};
+
+type OffsitePinRow = {
+  requestId: string;
+  workerId: string;
+  workerName: string | null;
+  latitude: number;
+  longitude: number;
+  accuracyM: number | undefined;
+  status: string;
 };
 
 async function filterOutSuperAdminWorkers(
@@ -161,16 +173,108 @@ export async function GET(req: Request) {
     workers = await filterOutSuperAdminWorkers(db, workers);
   }
 
+  /** Today (calendar day) in attendance zone — off-site request GPS for this day only. */
+  const todayKey = DateTime.now()
+    .setZone(DEFAULT_ATTENDANCE_TIME_ZONE)
+    .toFormat("yyyy-MM-dd");
+  const offsiteSnap = await db
+    .collection("offsiteWorkRequests")
+    .where("date", "==", todayKey)
+    .get();
+
+  let offsitePins: OffsitePinRow[] = offsiteSnap.docs
+    .map((docSnap) => {
+      const data = docSnap.data();
+      const workerId = typeof data.workerId === "string" ? data.workerId.trim() : "";
+      const status = typeof data.status === "string" ? data.status : "";
+      const gps = data.requestGps as Record<string, unknown> | undefined;
+      const lat = gps && typeof gps.latitude === "number" ? gps.latitude : Number.NaN;
+      const lng = gps && typeof gps.longitude === "number" ? gps.longitude : Number.NaN;
+      const accRaw = gps?.accuracyM;
+      const accuracyM =
+        typeof accRaw === "number" && Number.isFinite(accRaw) ? accRaw : undefined;
+      return {
+        requestId: docSnap.id,
+        workerId,
+        workerName: null as string | null,
+        latitude: lat,
+        longitude: lng,
+        accuracyM,
+        status,
+      } satisfies OffsitePinRow;
+    })
+    .filter(
+      (r) =>
+        r.workerId &&
+        (r.status === "pending" || r.status === "approved") &&
+        Number.isFinite(r.latitude) &&
+        Number.isFinite(r.longitude)
+    );
+
+  if (siteFilter) {
+    const { latitude: clat, longitude: clng, radius } = siteFilter;
+    offsitePins = offsitePins.filter((r) => {
+      const d = haversineMeters(r.latitude, r.longitude, clat, clng);
+      return d <= radius;
+    });
+  }
+
+  const offIds = [...new Set(offsitePins.map((p) => p.workerId))];
+  const offNameById = new Map<string, string | null>();
+  for (let i = 0; i < offIds.length; i += 20) {
+    const chunk = offIds.slice(i, i + 20);
+    const refs = chunk.map((id) => db.collection("users").doc(id));
+    const snaps = await db.getAll(...refs);
+    snaps.forEach((s, j) => {
+      const id = chunk[j]!;
+      if (!s.exists) {
+        offNameById.set(id, null);
+        return;
+      }
+      const n = s.data()?.name;
+      offNameById.set(id, typeof n === "string" && n.trim() ? n.trim() : null);
+    });
+  }
+
+  offsitePins = offsitePins.map((p) => ({
+    ...p,
+    workerName: offNameById.get(p.workerId) ?? null,
+  }));
+
+  if (!isSuperAdminDecoded(decoded)) {
+    offsitePins = await (async () => {
+      if (offsitePins.length === 0) return offsitePins;
+      const pinWorkerIds = [...new Set(offsitePins.map((p) => p.workerId))];
+      const hide = new Set<string>();
+      for (let i = 0; i < pinWorkerIds.length; i += 10) {
+        const chunk = pinWorkerIds.slice(i, i + 10);
+        const refs = chunk.map((id) => db.collection("users").doc(id));
+        const snaps = await db.getAll(...refs);
+        snaps.forEach((s, j) => {
+          if (!s.exists) return;
+          const d = s.data()!;
+          const email = typeof d.email === "string" ? d.email : "";
+          const role = typeof d.role === "string" ? d.role : "employee";
+          const id = chunk[j]!;
+          if (isSuperAdminUserRow(email, role)) hide.add(id);
+        });
+      }
+      return offsitePins.filter((p) => !hide.has(p.workerId));
+    })();
+  }
+
   const parsed = outSchema.safeParse(workers);
   if (!parsed.success) {
     return NextResponse.json({
       workers,
+      offsitePins,
       site: siteFilter,
     });
   }
 
   return NextResponse.json({
     workers: parsed.data,
+    offsitePins,
     site: siteFilter,
   });
 }

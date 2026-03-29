@@ -12,7 +12,8 @@ export default function AdminWorkersPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Workers</h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Directory, password reset links, and per-user attendance calendars.
+          Directory, password reset links, and attendance calendar (use{" "}
+          <strong className="text-zinc-400">Attendance calendar</strong> or <strong className="text-zinc-400">View</strong> on a row).
         </p>
       </div>
       <Suspense

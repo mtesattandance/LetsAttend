@@ -160,6 +160,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /offsiteWorkRequests/{id} {
+      allow read: if signedIn()
+        && (resource.data.workerId == request.auth.uid || isAdmin());
+      allow create: if signedIn()
+        && request.resource.data.workerId == request.auth.uid;
+      allow update: if signedIn() && isAdmin();
+      allow delete: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

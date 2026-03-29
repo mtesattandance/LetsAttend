@@ -57,8 +57,6 @@ export function UtcTimePicker({
     onChange(to24hUtc(nh, nm, nap));
   };
 
-  const disabled = allowEmpty && !hasValue;
-
   return (
     <div className={cn("flex flex-col gap-2", className)}>
       <span
@@ -106,8 +104,7 @@ export function UtcTimePicker({
           "flex flex-wrap items-center gap-2 rounded-xl border p-2",
           light
             ? "border-zinc-200 bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800/50"
-            : "border-white/10 bg-black/40",
-          disabled && "pointer-events-none opacity-40"
+            : "border-white/10 bg-black/40"
         )}
       >
         <SearchableSelect
@@ -118,7 +115,6 @@ export function UtcTimePicker({
           onValueChange={(v) => apply(Number(v), m, ap)}
           options={HOURS.map((h) => ({ value: String(h), label: String(h) }))}
           searchPlaceholder="Search hour…"
-          disabled={disabled}
           showChevron={false}
           triggerClassName={cn(
             "min-w-[4.25rem] flex-1 justify-center rounded-lg border px-2 py-2 text-center text-sm",
@@ -140,7 +136,6 @@ export function UtcTimePicker({
             label: String(mm).padStart(2, "0"),
           }))}
           searchPlaceholder="Search minute…"
-          disabled={disabled}
           showChevron={false}
           triggerClassName={cn(
             "min-w-[4.25rem] flex-1 justify-center rounded-lg border px-2 py-2 text-center text-sm",
@@ -155,7 +150,6 @@ export function UtcTimePicker({
             <button
               key={p}
               type="button"
-              disabled={disabled}
               className={cn(
                 "flex-1 rounded-lg px-2 py-2.5 text-sm font-semibold transition-colors",
                 ap === p

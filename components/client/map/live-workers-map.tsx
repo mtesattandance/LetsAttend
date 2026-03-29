@@ -65,6 +65,24 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadowUrl,
 });
 
+const offsiteSubmitGpsIcon = L.divIcon({
+  className: "leaflet-offsite-gps-icon",
+  html:
+    '<div style="width:13px;height:13px;border-radius:9999px;background:#a78bfa;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.35)"></div>',
+  iconSize: [13, 13],
+  iconAnchor: [6.5, 6.5],
+});
+
+type OffsiteMapPin = {
+  requestId: string;
+  workerId: string;
+  workerName?: string | null;
+  latitude: number;
+  longitude: number;
+  accuracyM?: number;
+  status: string;
+};
+
 /**
  * Bounding box for a geofence without attaching a Layer to the map.
  * Leaflet's `L.circle(...).getBounds()` needs `_map` and crashes before the map is ready.
@@ -108,6 +126,7 @@ function useIsNarrowJumpPanel() {
 
 function MapJumpToolbar({
   points,
+  offsitePins,
   site,
   jumpSites,
   narrowScreen,
@@ -115,6 +134,7 @@ function MapJumpToolbar({
   onPanelOpenChange,
 }: {
   points: LiveWorker[];
+  offsitePins: OffsiteMapPin[];
   site: SiteGeofence | null;
   jumpSites: JumpSite[] | undefined;
   narrowScreen: boolean;
@@ -214,15 +234,33 @@ function MapJumpToolbar({
               value={workerPick}
               onValueChange={(v) => {
                 setWorkerPick(v);
+                if (v.startsWith("offsite:")) {
+                  const id = v.slice("offsite:".length);
+                  const o = offsitePins.find((x) => x.requestId === id);
+                  if (
+                    o &&
+                    Number.isFinite(o.latitude) &&
+                    Number.isFinite(o.longitude)
+                  ) {
+                    flyTo(o.latitude, o.longitude, 18);
+                  }
+                  return;
+                }
                 const p = points.find((x) => x.workerId === v);
                 if (p && Number.isFinite(p.latitude) && Number.isFinite(p.longitude)) {
                   flyTo(p.latitude, p.longitude, 18);
                 }
               }}
-              options={points.map((p) => ({
-                value: p.workerId,
-                label: p.workerName?.trim() || p.workerId,
-              }))}
+              options={[
+                ...points.map((p) => ({
+                  value: p.workerId,
+                  label: p.workerName?.trim() || p.workerId,
+                })),
+                ...offsitePins.map((o) => ({
+                  value: `offsite:${o.requestId}`,
+                  label: `${o.workerName?.trim() || o.workerId} · off-site GPS`,
+                })),
+              ]}
               emptyLabel="— Select —"
               searchPlaceholder="Search workers…"
               triggerClassName={selectTriggerClass}
@@ -292,9 +330,11 @@ function MapJumpToolbar({
 function FitSiteAndPoints({
   site,
   points,
+  extraLatLng,
 }: {
   site: SiteGeofence | null;
   points: LiveWorker[];
+  extraLatLng: [number, number][];
 }) {
   const map = useMap();
 
@@ -309,13 +349,18 @@ function FitSiteAndPoints({
         for (const p of points) {
           bounds = bounds.extend([p.latitude, p.longitude]);
         }
+        for (const pair of extraLatLng) {
+          bounds = bounds.extend(pair);
+        }
         map.fitBounds(bounds.pad(0.12));
         return;
       }
-      if (!points.length) return;
-      const bounds = L.latLngBounds(
-        points.map((p) => [p.latitude, p.longitude] as [number, number])
-      );
+      const all = [
+        ...points.map((p) => [p.latitude, p.longitude] as [number, number]),
+        ...extraLatLng,
+      ];
+      if (!all.length) return;
+      const bounds = L.latLngBounds(all);
       map.fitBounds(bounds.pad(0.15));
     };
 
@@ -326,7 +371,7 @@ function FitSiteAndPoints({
         /* map / tiles not ready */
       }
     });
-  }, [map, site, points]);
+  }, [map, site, points, extraLatLng]);
 
   return null;
 }
@@ -353,6 +398,7 @@ function LiveWorkersMapInner({
 }) {
   const [basemap, setBasemap] = React.useState<BasemapId>(DEFAULT_BASEMAP);
   const [points, setPoints] = React.useState<LiveWorker[]>([]);
+  const [offsitePins, setOffsitePins] = React.useState<OffsiteMapPin[]>([]);
   const [site, setSite] = React.useState<SiteGeofence | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -383,6 +429,7 @@ function LiveWorkersMapInner({
         });
         const data = (await res.json()) as {
           workers?: LiveWorker[];
+          offsitePins?: OffsiteMapPin[];
           site?: SiteGeofence | null;
           error?: string;
         };
@@ -391,11 +438,15 @@ function LiveWorkersMapInner({
         }
         if (cancelled) return;
         setPoints(data.workers ?? []);
+        setOffsitePins(
+          Array.isArray(data.offsitePins) ? data.offsitePins : []
+        );
         setSite(data.site ?? null);
       } catch (e) {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : "Failed to load");
         setPoints([]);
+        setOffsitePins([]);
         setSite(null);
       } finally {
         if (!cancelled) setLoading(false);
@@ -412,15 +463,23 @@ function LiveWorkersMapInner({
 
   const center = React.useMemo((): [number, number] => {
     if (site) return [site.latitude, site.longitude];
-    if (points.length === 0) return [0, 0];
-    const avgLat =
-      points.reduce((s, p) => s + p.latitude, 0) / points.length;
-    const avgLng =
-      points.reduce((s, p) => s + p.longitude, 0) / points.length;
+    const all = [
+      ...points.map((p) => [p.latitude, p.longitude] as const),
+      ...offsitePins.map((o) => [o.latitude, o.longitude] as const),
+    ];
+    if (all.length === 0) return [0, 0];
+    const avgLat = all.reduce((s, p) => s + p[0], 0) / all.length;
+    const avgLng = all.reduce((s, p) => s + p[1], 0) / all.length;
     return [avgLat, avgLng];
-  }, [site, points]);
+  }, [site, points, offsitePins]);
 
-  const zoom = site ? 15 : points.length ? 13 : 2;
+  const zoom = site ? 15 : points.length || offsitePins.length ? 13 : 2;
+
+  const offsiteLatLng = React.useMemo(
+    (): [number, number][] =>
+      offsitePins.map((o) => [o.latitude, o.longitude]),
+    [offsitePins]
+  );
 
   return (
     <div
@@ -432,13 +491,13 @@ function LiveWorkersMapInner({
       <div className="px-4 py-3 text-sm text-zinc-300">
         {siteId ? (
           <>
-            Live GPS in this site&apos;s area {loading ? "…" : ""} — markers only
-            show workers whose last position is inside the geofence.
+            Live GPS in this site&apos;s area {loading ? "…" : ""} — blue: last
+            worker position inside fence; violet: off-site request GPS submitted today.
           </>
         ) : (
           <>
-            Live worker map {loading ? "…" : ""} — use Satellite to match real
-            buildings.
+            Live map {loading ? "…" : ""} — blue: last worker GPS; violet:
+            off-site submit location (today). Use Satellite to match buildings.
           </>
         )}
       </div>
@@ -458,6 +517,7 @@ function LiveWorkersMapInner({
           <BasemapLayerControl value={basemap} onChange={setBasemap} />
           <MapJumpToolbar
             points={points}
+            offsitePins={offsitePins}
             site={site}
             jumpSites={jumpSites}
             narrowScreen={isNarrowJump}
@@ -476,8 +536,12 @@ function LiveWorkersMapInner({
               }}
             />
           ) : null}
-          {points.length || site ? (
-            <FitSiteAndPoints site={site} points={points} />
+          {points.length || offsitePins.length || site ? (
+            <FitSiteAndPoints
+              site={site}
+              points={points}
+              extraLatLng={offsiteLatLng}
+            />
           ) : null}
           {points.map((p) => {
             const label = p.workerName?.trim() || p.workerId;
@@ -496,6 +560,36 @@ function LiveWorkersMapInner({
                       {typeof p.lastUpdatedMs === "number"
                         ? `Updated: ${formatInstantTime12hLocal(p.lastUpdatedMs)}`
                         : "Last update: unknown"}
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
+          {offsitePins.map((o) => {
+            const label = o.workerName?.trim() || o.workerId;
+            return (
+              <Marker
+                key={`offsite-${o.requestId}`}
+                position={[o.latitude, o.longitude]}
+                icon={offsiteSubmitGpsIcon}
+              >
+                <Tooltip permanent direction="top" offset={[0, -6]} opacity={1}>
+                  <span className="rounded-md bg-violet-950/90 px-1.5 py-0.5 text-[11px] font-medium text-violet-100 shadow">
+                    {label} · off-site
+                  </span>
+                </Tooltip>
+                <Popup>
+                  <div className="min-w-[180px]">
+                    <div className="text-sm font-medium text-zinc-900">{label}</div>
+                    <div className="mt-0.5 font-mono text-[10px] text-zinc-600">
+                      {o.workerId}
+                    </div>
+                    <div className="mt-1 text-xs text-violet-800">
+                      Off-site request GPS ({o.status})
+                    </div>
+                    <div className="mt-1 text-xs text-zinc-600">
+                      Submitted today — admin live map only.
                     </div>
                   </div>
                 </Popup>

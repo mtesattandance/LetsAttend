@@ -14,8 +14,11 @@ import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDashboardUser } from "@/components/client/dashboard-user-context";
 import { normalizeTimeZoneId, workTimeZoneUiLabel } from "@/lib/date/time-zone";
-import type { OvertimeDayDetailRow } from "@/lib/attendance/worker-day-detail";
-import { formatInstantDateTime12hInZone } from "@/lib/time/format-wall-time";
+import type {
+  OvertimeDayDetailRow,
+  OffsiteDayDetailRow,
+} from "@/lib/attendance/worker-day-detail";
+import { formatInstantDateTime12hInZone, formatWallHm12h } from "@/lib/time/format-wall-time";
 
 function zoneShortLabel(tz: string): string {
   return tz === "Asia/Kathmandu" ? "NPT" : tz;
@@ -30,6 +33,7 @@ export type DayDetailPayload =
       workerName: string | null;
       workerEmail: string | null;
       overtime: OvertimeDayDetailRow[];
+      offsite: OffsiteDayDetailRow[];
     }
   | {
       ok: true;
@@ -78,6 +82,7 @@ export type DayDetailPayload =
         }[];
       };
       overtime: OvertimeDayDetailRow[];
+      offsite: OffsiteDayDetailRow[];
     };
 
 function fmtLocal(ms: number | null | undefined, displayTimeZone: string) {
@@ -102,6 +107,154 @@ function overtimeStatusClass(status: string) {
   if (status === "rejected") return "text-red-400";
   if (status === "pending") return "text-amber-300";
   return "text-zinc-400";
+}
+
+function offsiteStatusClass(status: string) {
+  if (status === "approved") return "text-emerald-400";
+  if (status === "rejected") return "text-red-400";
+  if (status === "pending") return "text-amber-300";
+  return "text-zinc-400";
+}
+
+function OffsiteSection({
+  rows,
+  displayTimeZone,
+}: {
+  rows: OffsiteDayDetailRow[];
+  displayTimeZone: string;
+}) {
+  if (rows.length === 0) return null;
+  const z = workTimeZoneUiLabel(displayTimeZone);
+  return (
+    <Card className="border-sky-500/20 bg-sky-500/[0.04]">
+      <CardHeader>
+        <CardTitle className="text-base">Off-site work (requested)</CardTitle>
+        <CardDescription>
+          Approved windows count toward your day total below ({z} wall times).
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {rows.map((r) => {
+          const start =
+            r.status === "approved" && r.approvedStartHm ? r.approvedStartHm : r.requestedStartHm;
+          const end =
+            r.status === "approved" && r.approvedEndHm ? r.approvedEndHm : r.requestedEndHm;
+          return (
+            <div
+              key={r.id}
+              className="rounded-xl border border-zinc-200/80 bg-zinc-100/80 px-3 py-3 text-sm dark:border-white/10 dark:bg-black/20"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="font-mono text-[11px] text-zinc-500">{r.id}</p>
+                <span className={cn("text-xs font-semibold capitalize", offsiteStatusClass(r.status))}>
+                  {r.status}
+                </span>
+              </div>
+              {r.reason ? (
+                <p className="mt-2 text-zinc-300">
+                  <span className="text-zinc-500">Reason: </span>
+                  {r.reason}
+                </p>
+              ) : null}
+              <p className="mt-1 text-zinc-200">
+                <span className="text-zinc-500">Assignee: </span>
+                {r.assigneeAdminName ?? r.assigneeAdminEmail ?? r.assigneeAdminUid ?? "—"}
+              </p>
+              <p className="mt-1 font-mono text-xs text-zinc-400">
+                Window: {formatWallHm12h(start)} → {formatWallHm12h(end)} ({z})
+              </p>
+              {r.durationMs != null && r.durationMs >= 0 ? (
+                <p className="mt-1 text-xs text-sky-200/90">Duration: {fmtDuration(r.durationMs)}</p>
+              ) : null}
+              {r.requestGps ? (
+                <p className="mt-1 text-xs text-zinc-500">
+                  Request GPS: {r.requestGps.latitude.toFixed(5)}, {r.requestGps.longitude.toFixed(5)}
+                  {typeof r.requestGps.accuracyM === "number"
+                    ? ` (±${Math.round(r.requestGps.accuracyM)}m)`
+                    : ""}
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DayHoursSummary({
+  data,
+  displayTimeZone,
+}: {
+  data: DayDetailPayload;
+  displayTimeZone: string;
+}) {
+  const z = workTimeZoneUiLabel(displayTimeZone);
+  const regularMs = data.absent
+    ? 0
+    : data.analytics.totalSessionMs != null
+      ? Math.max(0, data.analytics.totalSessionMs)
+      : 0;
+  let overtimeMs = 0;
+  for (const r of data.overtime) {
+    if (r.status !== "approved") continue;
+    const a = r.overtimeCheckIn?.atMs;
+    const b = r.overtimeCheckOut?.atMs;
+    if (a != null && b != null && b >= a) overtimeMs += b - a;
+  }
+  let offsiteMs = 0;
+  for (const r of data.offsite) {
+    if (r.status === "approved" && r.durationMs != null && r.durationMs >= 0) {
+      offsiteMs += r.durationMs;
+    }
+  }
+  const totalMs = regularMs + overtimeMs + offsiteMs;
+  const sessionOpen = data.absent ? false : data.analytics.sessionOpen;
+
+  return (
+    <Card className="border-emerald-500/25 bg-emerald-500/[0.05]">
+      <CardHeader>
+        <CardTitle className="text-base">Day hours summary</CardTitle>
+        <CardDescription>
+          Regular time from check-in through check-out (per site above), plus approved overtime and
+          approved off-site. Times are based on your calendar day in {z}.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        <div className="flex flex-wrap justify-between gap-2 border-b border-white/10 pb-2">
+          <span className="text-zinc-400">Regular (sites until check-out)</span>
+          <span className="font-mono text-emerald-200/90">
+            {regularMs > 0 || !data.absent ? (
+              <>
+                {fmtDuration(regularMs)}
+                {sessionOpen ? " (so far)" : ""}
+              </>
+            ) : (
+              "—"
+            )}
+          </span>
+        </div>
+        <div className="flex flex-wrap justify-between gap-2 border-b border-white/10 pb-2">
+          <span className="text-zinc-400">Approved overtime</span>
+          <span className="font-mono text-amber-200/90">
+            {overtimeMs > 0 ? fmtDuration(overtimeMs) : "—"}
+          </span>
+        </div>
+        <div className="flex flex-wrap justify-between gap-2 border-b border-white/10 pb-2">
+          <span className="text-zinc-400">Approved off-site</span>
+          <span className="font-mono text-sky-200/90">
+            {offsiteMs > 0 ? fmtDuration(offsiteMs) : "—"}
+          </span>
+        </div>
+        <div className="flex flex-wrap justify-between gap-2 pt-1">
+          <span className="font-medium text-zinc-200">Total credited hours</span>
+          <span className="font-mono text-lg font-semibold text-emerald-100">
+            {totalMs > 0 ? fmtDuration(totalMs) : "—"}
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function OvertimeSection({
@@ -273,6 +426,8 @@ export function AttendanceDayDetailView({
             </CardHeader>
           </Card>
           <OvertimeSection rows={data.overtime} displayTimeZone={displayTz} />
+          <OffsiteSection rows={data.offsite} displayTimeZone={displayTz} />
+          <DayHoursSummary data={data} displayTimeZone={displayTz} />
         </>
       ) : (
         <>
@@ -366,6 +521,7 @@ export function AttendanceDayDetailView({
           ) : null}
 
           <OvertimeSection rows={data.overtime} displayTimeZone={displayTz} />
+          <OffsiteSection rows={data.offsite} displayTimeZone={displayTz} />
 
           <Card className="border-violet-500/20 bg-violet-500/[0.03]">
             <CardHeader>
@@ -495,6 +651,8 @@ export function AttendanceDayDetailView({
               </div>
             </CardContent>
           </Card>
+
+          <DayHoursSummary data={data} displayTimeZone={displayTz} />
         </>
       )}
     </div>

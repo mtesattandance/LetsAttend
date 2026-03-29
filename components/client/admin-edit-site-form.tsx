@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import { SitePinPicker, type LatLng } from "@/components/client/map/site-pin-picker";
 import { UtcTimePicker } from "@/components/client/utc-time-picker";
+import { getGpsFix } from "@/lib/client/geolocation";
 
 export type EditableSite = {
   id: string;
@@ -38,6 +39,7 @@ export function AdminEditSiteForm({
   const [busy, setBusy] = React.useState(false);
   const [placeQuery, setPlaceQuery] = React.useState("");
   const [geoBusy, setGeoBusy] = React.useState(false);
+  const [locateBusy, setLocateBusy] = React.useState(false);
   const [geoResults, setGeoResults] = React.useState<
     { latitude: number; longitude: number; label: string }[]
   >([]);
@@ -104,6 +106,30 @@ export function AdminEditSiteForm({
     setMsg(`Pinned: ${r.label.slice(0, 120)}${r.label.length > 120 ? "…" : ""}`);
   };
 
+  const locateMe = async () => {
+    setMsg(null);
+    setLocateBusy(true);
+    try {
+      const g = await getGpsFix();
+      setLatitude(String(g.latitude));
+      setLongitude(String(g.longitude));
+      setRecenterAt({ latitude: g.latitude, longitude: g.longitude });
+      setRecenterSeq((n) => n + 1);
+      if (g.accuracyM != null && Number.isFinite(g.accuracyM)) {
+        const r = Math.min(200, Math.max(50, Math.round(g.accuracyM * 2)));
+        setRadius(String(r));
+      }
+      const acc = g.accuracyM != null ? Math.round(g.accuracyM) : "?";
+      setMsg(
+        `Located you (±${acc}m). Fine-tune the pin on the map or adjust radius before saving.`
+      );
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Location failed");
+    } finally {
+      setLocateBusy(false);
+    }
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMsg(null);
@@ -153,7 +179,7 @@ export function AdminEditSiteForm({
         immediately.
       </p>
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
         <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
           <span className="text-zinc-400">Find on map (search)</span>
           <input
@@ -169,14 +195,24 @@ export function AdminEditSiteForm({
             }}
           />
         </label>
-        <Button
-          type="button"
-          variant="secondary"
-          disabled={geoBusy}
-          onClick={() => void searchPlace()}
-        >
-          {geoBusy ? "Searching…" : "Search"}
-        </Button>
+        <div className="flex flex-wrap gap-2 sm:shrink-0">
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={geoBusy}
+            onClick={() => void searchPlace()}
+          >
+            {geoBusy ? "Searching…" : "Search"}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={locateBusy}
+            onClick={() => void locateMe()}
+          >
+            {locateBusy ? "Locating…" : "Locate me"}
+          </Button>
+        </div>
       </div>
       {geoResults.length > 0 ? (
         <ul className="max-h-36 space-y-1 overflow-y-auto rounded-xl border border-white/10 bg-white/[0.03] p-2 text-sm">

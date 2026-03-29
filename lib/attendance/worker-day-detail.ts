@@ -1,5 +1,7 @@
 import type { Firestore } from "firebase-admin/firestore";
+import { DateTime } from "luxon";
 import { serializeFirestoreForJson } from "@/lib/firestore/serialize-for-json";
+import { DEFAULT_ATTENDANCE_TIME_ZONE } from "@/lib/date/time-zone";
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -73,6 +75,52 @@ export type OvertimeDayDetailRow = {
   } | null;
 };
 
+const HM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function wallHmDurationMsOnDay(
+  dayYmd: string,
+  startHm: string,
+  endHm: string,
+  zone: string = DEFAULT_ATTENDANCE_TIME_ZONE
+): number | null {
+  if (!HM_RE.test(startHm) || !HM_RE.test(endHm)) return null;
+  const [y, mo, d] = dayYmd.split("-").map(Number);
+  if (!y || !mo || !d) return null;
+  const [sh, sm] = startHm.split(":").map(Number);
+  const [eh, em] = endHm.split(":").map(Number);
+  const s = DateTime.fromObject(
+    { year: y, month: mo, day: d, hour: sh, minute: sm },
+    { zone }
+  );
+  const e = DateTime.fromObject(
+    { year: y, month: mo, day: d, hour: eh, minute: em },
+    { zone }
+  );
+  if (!s.isValid || !e.isValid) return null;
+  const ms = e.toMillis() - s.toMillis();
+  return ms >= 0 ? ms : null;
+}
+
+export type OffsiteDayDetailRow = {
+  id: string;
+  status: string;
+  reason: string;
+  assigneeAdminUid: string | null;
+  assigneeAdminName: string | null;
+  assigneeAdminEmail: string | null;
+  requestedStartHm: string;
+  requestedEndHm: string;
+  approvedStartHm: string | null;
+  approvedEndHm: string | null;
+  /** Set when approved and wall times form a valid interval on `day`. */
+  durationMs: number | null;
+  requestGps: {
+    latitude: number;
+    longitude: number;
+    accuracyM?: number;
+  } | null;
+};
+
 async function fetchOvertimeForWorkerDay(
   db: Firestore,
   workerId: string,
@@ -130,6 +178,83 @@ async function fetchOvertimeForWorkerDay(
   return withOrder.map((x) => x.row);
 }
 
+async function fetchOffsiteForWorkerDay(
+  db: Firestore,
+  workerId: string,
+  day: string
+): Promise<OffsiteDayDetailRow[]> {
+  const snap = await db
+    .collection("offsiteWorkRequests")
+    .where("workerId", "==", workerId)
+    .where("date", "==", day)
+    .get();
+
+  const assigneeIds = new Set<string>();
+  for (const doc of snap.docs) {
+    const aid = doc.get("assigneeAdminUid");
+    if (typeof aid === "string" && aid) assigneeIds.add(aid);
+  }
+
+  const assigneeMeta: Record<string, { name: string | null; email: string | null }> = {};
+  for (const uid of assigneeIds) {
+    const u = await db.collection("users").doc(uid).get();
+    assigneeMeta[uid] = {
+      name: u.exists && typeof u.get("name") === "string" ? (u.get("name") as string) : null,
+      email: u.exists && typeof u.get("email") === "string" ? (u.get("email") as string) : null,
+    };
+  }
+
+  const rows = snap.docs.map((d) => {
+    const data = d.data();
+    const assigneeUid =
+      typeof data.assigneeAdminUid === "string" ? data.assigneeAdminUid : null;
+    const meta = assigneeUid ? assigneeMeta[assigneeUid] : undefined;
+    const reqStart = typeof data.requestedStartHm === "string" ? data.requestedStartHm : "00:00";
+    const reqEnd = typeof data.requestedEndHm === "string" ? data.requestedEndHm : "00:00";
+    const appStart =
+      typeof data.approvedStartHm === "string" ? data.approvedStartHm : null;
+    const appEnd = typeof data.approvedEndHm === "string" ? data.approvedEndHm : null;
+    const st = typeof data.status === "string" ? data.status : "unknown";
+    const gpsRaw = data.requestGps as Record<string, unknown> | undefined;
+    let requestGps: OffsiteDayDetailRow["requestGps"] = null;
+    if (
+      gpsRaw &&
+      typeof gpsRaw.latitude === "number" &&
+      typeof gpsRaw.longitude === "number"
+    ) {
+      requestGps = {
+        latitude: gpsRaw.latitude,
+        longitude: gpsRaw.longitude,
+        accuracyM:
+          typeof gpsRaw.accuracyM === "number" ? gpsRaw.accuracyM : undefined,
+      };
+    }
+    const useStart = st === "approved" && appStart ? appStart : reqStart;
+    const useEnd = st === "approved" && appEnd ? appEnd : reqEnd;
+    const durationMs =
+      st === "approved" ? wallHmDurationMsOnDay(day, useStart, useEnd) : null;
+
+    const row: OffsiteDayDetailRow = {
+      id: d.id,
+      status: st,
+      reason: typeof data.reason === "string" ? data.reason : "",
+      assigneeAdminUid: assigneeUid,
+      assigneeAdminName: meta?.name ?? null,
+      assigneeAdminEmail: meta?.email ?? null,
+      requestedStartHm: reqStart,
+      requestedEndHm: reqEnd,
+      approvedStartHm: appStart,
+      approvedEndHm: appEnd,
+      durationMs,
+      requestGps,
+    };
+    return { row, sortKey: timeToMs(d.get("createdAt")) ?? 0 };
+  });
+
+  rows.sort((a, b) => a.sortKey - b.sortKey);
+  return rows.map((x) => x.row);
+}
+
 export type WorkerDayDetailResult =
   | {
       ok: true;
@@ -139,6 +264,7 @@ export type WorkerDayDetailResult =
       workerName: string | null;
       workerEmail: string | null;
       overtime: OvertimeDayDetailRow[];
+      offsite: OffsiteDayDetailRow[];
     }
   | {
       ok: true;
@@ -178,6 +304,7 @@ export type WorkerDayDetailResult =
         segments: SiteSegment[];
       };
       overtime: OvertimeDayDetailRow[];
+      offsite: OffsiteDayDetailRow[];
     };
 
 export async function buildWorkerDayDetail(
@@ -189,9 +316,10 @@ export async function buildWorkerDayDetail(
     throw new Error("Invalid day");
   }
 
-  const [userSnap, overtime, attSnap] = await Promise.all([
+  const [userSnap, overtime, offsite, attSnap] = await Promise.all([
     db.collection("users").doc(workerId).get(),
     fetchOvertimeForWorkerDay(db, workerId, day),
+    fetchOffsiteForWorkerDay(db, workerId, day),
     db.collection("attendance").doc(`${workerId}_${day}`).get(),
   ]);
 
@@ -213,6 +341,7 @@ export async function buildWorkerDayDetail(
       workerName,
       workerEmail,
       overtime,
+      offsite,
     };
   }
 
@@ -453,5 +582,6 @@ export async function buildWorkerDayDetail(
       segments,
     },
     overtime,
+    offsite,
   };
 }

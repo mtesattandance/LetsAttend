@@ -5,7 +5,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as React from "react";
 import {
+  Building2,
   Calendar,
+  CalendarClock,
   ClipboardList,
   Clock,
   ListChecks,
@@ -15,6 +17,8 @@ import {
   MapPin,
   Radio,
   Settings,
+  ChevronDown,
+  ChevronUp,
   UserPlus,
   Users,
   X,
@@ -34,6 +38,19 @@ type Props = {
 export function DashboardSidebar({ mobileOpen, onCloseMobile }: Props) {
   const pathname = usePathname();
   const { user } = useDashboardUser();
+  const [employeeSectionOpen, setEmployeeSectionOpen] = React.useState(true);
+  const [adminSectionOpen, setAdminSectionOpen] = React.useState(true);
+
+  /** Keep the section that owns the current route expanded so the active link stays visible. */
+  React.useEffect(() => {
+    const p = pathname.replace(/\/$/, "") || "/";
+    if (p === "/dashboard/employee" || p.startsWith("/dashboard/employee/")) {
+      setEmployeeSectionOpen(true);
+    }
+    if (p === "/dashboard/admin" || p.startsWith("/dashboard/admin/")) {
+      setAdminSectionOpen(true);
+    }
+  }, [pathname]);
 
   const isAdminLike =
     user?.role === "admin" ||
@@ -42,9 +59,15 @@ export function DashboardSidebar({ mobileOpen, onCloseMobile }: Props) {
   const employeeNav: { href: string; label: string; icon: typeof LayoutDashboard }[] = [
     { href: "/dashboard/employee", label: "Work", icon: LayoutDashboard },
     { href: "/dashboard/employee/overtime", label: "Overtime", icon: Clock },
+    { href: "/dashboard/employee/offsite", label: "Off-site", icon: Building2 },
     { href: "/dashboard/employee/friend", label: "Friend check-in", icon: UserPlus },
     { href: "/dashboard/employee/assigned", label: "Assigned", icon: ClipboardList },
     { href: "/dashboard/employee/calendar", label: "Calendar", icon: Calendar },
+    {
+      href: "/dashboard/employee/working-hours",
+      label: "Working hours",
+      icon: CalendarClock,
+    },
   ];
 
   const adminBase = "/dashboard/admin";
@@ -56,6 +79,12 @@ export function DashboardSidebar({ mobileOpen, onCloseMobile }: Props) {
       { href: `${adminBase}/assignments`, label: "Assignments", icon: ListChecks },
       { href: `${adminBase}/sites`, label: "Sites", icon: MapPin },
       { href: `${adminBase}/overtime`, label: "Overtime", icon: Clock },
+      { href: `${adminBase}/offsite`, label: "Off-site", icon: Building2 },
+      {
+        href: `${adminBase}/working-hours`,
+        label: "Working hours",
+        icon: CalendarClock,
+      },
     ];
     if (user?.role === "super_admin") {
       links.push({ href: `${adminBase}/team`, label: "Team", icon: UserPlus });
@@ -113,52 +142,86 @@ export function DashboardSidebar({ mobileOpen, onCloseMobile }: Props) {
         </div>
 
         <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden">
-          <p className="px-3 pt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-            Employee
-          </p>
-          {employeeNav.map(({ href, label, icon: Icon }) => {
-            const active = employeeLinkActive(href);
-            return (
-              <Link
-                key={href}
-                href={href}
-                onClick={onCloseMobile}
-                className={cn(
-                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
-                  active
-                    ? "bg-zinc-200/90 text-zinc-900 shadow-[0_0_20px_-8px_rgba(34,211,238,0.35)] dark:bg-white/10 dark:text-white dark:shadow-[0_0_20px_-8px_rgba(34,211,238,0.5)]"
-                    : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-zinc-100"
-                )}
-              >
-                <Icon className="size-4 shrink-0" />
-                {label}
-              </Link>
-            );
-          })}
-          {isAdminLike ? (
-            <div className="space-y-1.5">
-              <p className="px-3 pt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                Admin
-              </p>
-              {adminSubLinks.map(({ href, label, icon: Icon }) => {
-                const active = adminLinkActive(href);
+          <button
+            type="button"
+            className={cn(
+              "flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left transition-colors",
+              "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-white/5"
+            )}
+            aria-expanded={employeeSectionOpen}
+            onClick={() => setEmployeeSectionOpen((o) => !o)}
+          >
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+              Employee
+            </span>
+            {employeeSectionOpen ? (
+              <ChevronUp className="size-4 shrink-0 text-zinc-500" aria-hidden />
+            ) : (
+              <ChevronDown className="size-4 shrink-0 text-zinc-500" aria-hidden />
+            )}
+          </button>
+          {employeeSectionOpen
+            ? employeeNav.map(({ href, label, icon: Icon }) => {
+                const active = employeeLinkActive(href);
                 return (
                   <Link
                     key={href}
                     href={href}
                     onClick={onCloseMobile}
                     className={cn(
-                      "flex items-center gap-2.5 rounded-lg py-2 pl-3 pr-2 text-xs transition-colors md:text-[13px]",
+                      "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
                       active
-                        ? "bg-zinc-200/90 text-zinc-900 shadow-[0_0_16px_-8px_rgba(34,211,238,0.3)] dark:bg-white/10 dark:text-white dark:shadow-[0_0_16px_-8px_rgba(34,211,238,0.45)]"
+                        ? "bg-zinc-200/90 text-zinc-900 shadow-[0_0_20px_-8px_rgba(34,211,238,0.35)] dark:bg-white/10 dark:text-white dark:shadow-[0_0_20px_-8px_rgba(34,211,238,0.5)]"
                         : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-zinc-100"
                     )}
                   >
-                    <Icon className="size-3.5 shrink-0 opacity-90 md:size-4" />
-                    <span className="leading-tight">{label}</span>
+                    <Icon className="size-4 shrink-0" />
+                    {label}
                   </Link>
                 );
-              })}
+              })
+            : null}
+          {isAdminLike ? (
+            <div className="space-y-1.5 pt-1">
+              <button
+                type="button"
+                className={cn(
+                  "flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition-colors",
+                  "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-white/5"
+                )}
+                aria-expanded={adminSectionOpen}
+                onClick={() => setAdminSectionOpen((o) => !o)}
+              >
+                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  Admin
+                </span>
+                {adminSectionOpen ? (
+                  <ChevronUp className="size-4 shrink-0 text-zinc-500" aria-hidden />
+                ) : (
+                  <ChevronDown className="size-4 shrink-0 text-zinc-500" aria-hidden />
+                )}
+              </button>
+              {adminSectionOpen
+                ? adminSubLinks.map(({ href, label, icon: Icon }) => {
+                    const active = adminLinkActive(href);
+                    return (
+                      <Link
+                        key={href}
+                        href={href}
+                        onClick={onCloseMobile}
+                        className={cn(
+                          "flex items-center gap-2.5 rounded-lg py-2 pl-3 pr-2 text-xs transition-colors md:text-[13px]",
+                          active
+                            ? "bg-zinc-200/90 text-zinc-900 shadow-[0_0_16px_-8px_rgba(34,211,238,0.3)] dark:bg-white/10 dark:text-white dark:shadow-[0_0_16px_-8px_rgba(34,211,238,0.45)]"
+                            : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-zinc-100"
+                        )}
+                      >
+                        <Icon className="size-3.5 shrink-0 opacity-90 md:size-4" />
+                        <span className="leading-tight">{label}</span>
+                      </Link>
+                    );
+                  })
+                : null}
             </div>
           ) : null}
           {bottomLinks.map(({ href, label, icon: Icon }) => {
