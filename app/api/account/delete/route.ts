@@ -3,6 +3,7 @@ import { z } from "zod";
 import { adminAuth, adminDb } from "@/lib/firebase/admin";
 import { requireBearerUser } from "@/lib/auth/verify-request";
 import { jsonError } from "@/lib/api/json-error";
+import { releaseEmployeeId } from "@/lib/employee-id/allocator";
 
 export const runtime = "nodejs";
 
@@ -29,6 +30,8 @@ export async function POST(req: Request) {
 
   const uid = decoded.uid;
   const db = adminDb();
+  const userSnap = await db.collection("users").doc(uid).get();
+  const employeeId = userSnap.get("employeeId");
 
   try {
     const attSnap = await db.collection("attendance").where("workerId", "==", uid).get();
@@ -51,6 +54,12 @@ export async function POST(req: Request) {
 
   try {
     await db.collection("users").doc(uid).delete();
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    await releaseEmployeeId(db, employeeId);
   } catch {
     /* ignore */
   }

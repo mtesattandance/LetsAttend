@@ -3,6 +3,8 @@
 import * as React from "react";
 import { DateTime } from "luxon";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { useCalendarMode } from "@/components/client/calendar-mode-context";
+import { dayNumberForMode, monthLabelForMode } from "@/lib/date/bs-calendar";
 import { calendarDateKeyInTimeZone } from "@/lib/date/calendar-day-key";
 import { normalizeTimeZoneId } from "@/lib/date/time-zone";
 import { cn } from "@/lib/utils";
@@ -76,6 +78,12 @@ const MONTH_NAMES = [
   "December",
 ] as const;
 
+function bsYearFromAdYear(adYear: number, adMonthOneBased: number): string {
+  const label = monthLabelForMode(adYear, adMonthOneBased, "bs");
+  const m = /(\d{4})\s+BS$/.exec(label);
+  return m?.[1] ?? String(adYear);
+}
+
 export type DatePickerPanelProps = {
   selectedIso: string;
   onSelect: (iso: string) => void;
@@ -91,6 +99,7 @@ export function DatePickerPanel({
   className,
 }: DatePickerPanelProps) {
   const tz = normalizeTimeZoneId(timeZoneProp);
+  const { mode } = useCalendarMode();
   const [viewMonth, setViewMonth] = React.useState(() =>
     parseMonthAnchor(selectedIso, tz)
   );
@@ -106,7 +115,7 @@ export function DatePickerPanel({
 
   const grid = React.useMemo(() => buildMonthGrid(viewMonth, tz), [viewMonth, tz]);
 
-  const title = viewMonth.toFormat("LLLL yyyy");
+  const title = monthLabelForMode(viewMonth.year, viewMonth.month, mode);
 
   const goPrevMonth = () => setViewMonth((m) => m.minus({ months: 1 }).startOf("month"));
   const goNextMonth = () => setViewMonth((m) => m.plus({ months: 1 }).startOf("month"));
@@ -149,6 +158,10 @@ export function DatePickerPanel({
             {MONTH_NAMES.map((name, idx) => {
               const m = idx + 1;
               const isCurrent = viewMonth.month === m;
+              const monthText =
+                mode === "bs"
+                  ? monthLabelForMode(viewMonth.year, m, "bs").replace(/\s+\d{4}\s+BS$/, "")
+                  : name;
               return (
                 <DropdownMenuItem
                   key={name}
@@ -157,7 +170,7 @@ export function DatePickerPanel({
                     setViewMonth(viewMonth.set({ month: m }).startOf("month"));
                   }}
                 >
-                  {name}
+                  {monthText}
                 </DropdownMenuItem>
               );
             })}
@@ -178,7 +191,7 @@ export function DatePickerPanel({
                       : "text-zinc-300 hover:bg-zinc-800 hover:text-white"
                   )}
                 >
-                  {y}
+                  {mode === "bs" ? bsYearFromAdYear(y, viewMonth.month) : y}
                 </button>
               ))}
             </div>
@@ -233,7 +246,7 @@ export function DatePickerPanel({
                   "ring-1 ring-cyan-500/50 ring-inset"
               )}
             >
-              {cell.day}
+              {mode === "bs" ? dayNumberForMode(cell.iso, mode) : cell.day}
             </button>
           );
         })}

@@ -55,7 +55,8 @@ export function SiteSelectWithCustomRow({
             disabled={selectDisabled}
             options={sites.map((s) => ({
               value: s.id,
-              label: s.name?.trim() ? `${s.name} (${s.id})` : s.id,
+              label: s.name?.trim() ? s.name : s.id,
+              keywords: [s.name ?? "", s.id],
             }))}
             emptyLabel={blankOptionLabel}
             searchPlaceholder="Search sites…"

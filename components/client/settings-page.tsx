@@ -107,6 +107,11 @@ export function SettingsPage() {
                         {formatRoleDisplay(user.role)}
                       </span>
                     </p>
+                    {user.designation ? (
+                      <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                        Designation: <span className="font-medium">{user.designation}</span>
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
@@ -119,42 +124,44 @@ export function SettingsPage() {
           </div>
         </div>
 
-        <Card className="border-red-200 dark:border-red-500/25 lg:sticky lg:top-6 lg:self-start">
-          <CardHeader>
-            <CardTitle className="text-red-700 dark:text-red-400">Danger zone</CardTitle>
-            <CardDescription>
-              Permanently delete your account, Firestore profile, attendance
-              history, and live tracking data. This cannot be undone.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className={formFieldLabelClass}>
-                Type{" "}
-                <strong className="font-bold text-zinc-950 dark:text-zinc-100">{DELETE_PHRASE}</strong>{" "}
-                to confirm
-              </span>
-              <Input
-                value={phrase}
-                onChange={(e) => setPhrase(e.target.value)}
-                autoComplete="off"
-                placeholder={DELETE_PHRASE}
-                className="font-mono text-sm"
-              />
-            </label>
-            {deleteMsg ? (
-              <p className="text-sm font-medium text-red-700 dark:text-red-400">{deleteMsg}</p>
-            ) : null}
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={deleteBusy}
-              onClick={() => void deleteAccount()}
-            >
-              {deleteBusy ? "Deleting…" : "Delete my account"}
-            </Button>
-          </CardContent>
-        </Card>
+        {user?.role === "admin" || user?.role === "super_admin" ? (
+          <Card className="border-red-200 dark:border-red-500/25 lg:sticky lg:top-6 lg:self-start">
+            <CardHeader>
+              <CardTitle className="text-red-700 dark:text-red-400">Danger zone</CardTitle>
+              <CardDescription>
+                Permanently delete your account, Firestore profile, attendance
+                history, and live tracking data. This cannot be undone.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className={formFieldLabelClass}>
+                  Type{" "}
+                  <strong className="font-bold text-zinc-950 dark:text-zinc-100">{DELETE_PHRASE}</strong>{" "}
+                  to confirm
+                </span>
+                <Input
+                  value={phrase}
+                  onChange={(e) => setPhrase(e.target.value)}
+                  autoComplete="off"
+                  placeholder={DELETE_PHRASE}
+                  className="font-mono text-sm"
+                />
+              </label>
+              {deleteMsg ? (
+                <p className="text-sm font-medium text-red-700 dark:text-red-400">{deleteMsg}</p>
+              ) : null}
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={deleteBusy}
+                onClick={() => void deleteAccount()}
+              >
+                {deleteBusy ? "Deleting…" : "Delete my account"}
+              </Button>
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
     </div>
   );

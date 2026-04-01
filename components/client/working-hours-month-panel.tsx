@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { DateTime } from "luxon";
 import {
   Card,
@@ -16,6 +17,13 @@ import { MONTHLY_REGULAR_CAP_HOURS } from "@/lib/attendance/month-hours-cap";
 import { WorkingHoursMonthPickerCard } from "@/components/client/working-hours-month-picker-card";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { useDashboardUser } from "@/components/client/dashboard-user-context";
+import { useCalendarMode } from "@/components/client/calendar-mode-context";
+import { formatIsoForCalendar, monthLabelForMode } from "@/lib/date/bs-calendar";
 
 type DayRow = {
   day: string;
@@ -29,6 +37,17 @@ type Payload = {
   month: string;
   zone: string;
   days: DayRow[];
+  entries: {
+    id: string;
+    day: string;
+    kind: "on_site" | "overtime" | "off_site";
+    inTime: string;
+    outTime: string;
+    dutyHours: number;
+    workPlace: string;
+    remark: string;
+  }[];
+  worker: { id: string; employeeId: string | null; name: string | null; designation: string | null };
   totalHours: number;
   approvedOffsiteHours: number;
   approvedClockOvertimeHours: number;
@@ -37,16 +56,18 @@ type Payload = {
   hoursOverCapAsOvertime: number;
 };
 
-function msToHr(ms: number): number {
-  return ms / 3_600_000;
-}
-
 function fmtHr(h: number): string {
   return `${h.toFixed(2)}`;
 }
 
 function currentMonthYyyyMm(zone: string): string {
   return DateTime.now().setZone(zone).toFormat("yyyy-MM");
+}
+
+function kindLabel(kind: Payload["entries"][number]["kind"]): string {
+  if (kind === "on_site") return "On-site";
+  if (kind === "off_site") return "Off-site";
+  return "Overtime";
 }
 
 export function WorkingHoursMonthPanel({
@@ -59,6 +80,33 @@ export function WorkingHoursMonthPanel({
   const [month, setMonth] = React.useState(() => currentMonthYyyyMm(zone));
   const [data, setData] = React.useState<Payload | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [edits, setEdits] = React.useState<
+    Record<string, { inTime: string; outTime: string; dutyHours: string; workPlace: string; remark: string }>
+  >({});
+  const [year, setYear] = React.useState(() => DateTime.now().setZone(zone).year);
+  const [periodOpen, setPeriodOpen] = React.useState(false);
+  const [periodMode, setPeriodMode] = React.useState<"year" | "range">("year");
+  const [periodYear, setPeriodYear] = React.useState(() => DateTime.now().setZone(zone).year);
+  const [periodStartMonth, setPeriodStartMonth] = React.useState(() => currentMonthYyyyMm(zone));
+  const [periodEndMonth, setPeriodEndMonth] = React.useState(() => currentMonthYyyyMm(zone));
+  const [mounted, setMounted] = React.useState(false);
+  const [downloading, setDownloading] = React.useState(false);
+  const { user: viewer } = useDashboardUser();
+  const { mode } = useCalendarMode();
+  const canEdit = viewer?.role === "admin" || viewer?.role === "super_admin";
+  const monthOptions = React.useMemo(() => {
+    const now = DateTime.now().setZone(zone);
+    const startYear = 2020;
+    const endYear = now.year + 1;
+    const out: Array<{ value: string; label: string }> = [];
+    for (let y = endYear; y >= startYear; y--) {
+      for (let m = 12; m >= 1; m--) {
+        const value = DateTime.fromObject({ year: y, month: m, day: 1 }, { zone }).toFormat("yyyy-MM");
+        out.push({ value, label: monthLabelForMode(y, m, mode) });
+      }
+    }
+    return out;
+  }, [mode, zone]);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -87,10 +135,268 @@ export function WorkingHoursMonthPanel({
     void load();
   }, [load]);
 
+  React.useEffect(() => {
+    setEdits({});
+  }, [month, workerId]);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const titleMonth = React.useMemo(() => {
     const dt = DateTime.fromFormat(month, "yyyy-MM", { zone });
-    return dt.isValid ? dt.toFormat("LLLL yyyy") : month;
-  }, [month, zone]);
+    return dt.isValid ? monthLabelForMode(dt.year, dt.month, mode) : month;
+  }, [mode, month, zone]);
+
+  const mergedRows = React.useMemo(() => {
+    if (!data) return [];
+    return data.entries.map((r) => {
+      const override = edits[r.id];
+      const duty =
+        override && override.dutyHours.trim().length > 0
+          ? Number(override.dutyHours)
+          : r.dutyHours;
+      return {
+        ...r,
+        inTime: override?.inTime ?? r.inTime,
+        outTime: override?.outTime ?? r.outTime,
+        dutyHours: Number.isFinite(duty) ? Math.max(0, duty) : r.dutyHours,
+        workPlace: override?.workPlace ?? r.workPlace,
+        remark: override?.remark ?? r.remark,
+      };
+    });
+  }, [data, edits]);
+
+  const groupedRows = React.useMemo(() => {
+    const map = new Map<string, typeof mergedRows>();
+    for (const row of mergedRows) {
+      const list = map.get(row.day);
+      if (list) list.push(row);
+      else map.set(row.day, [row]);
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [mergedRows]);
+
+  const totalsFromRows = React.useMemo(() => {
+    let onSite = 0;
+    let offSite = 0;
+    let overtime = 0;
+    for (const r of mergedRows) {
+      if (r.kind === "on_site") onSite += r.dutyHours;
+      else if (r.kind === "off_site") offSite += r.dutyHours;
+      else overtime += r.dutyHours;
+    }
+    const total = onSite + offSite + overtime;
+    return { onSite, offSite, overtime, total };
+  }, [mergedRows]);
+
+  async function fetchLogoDataUrl(): Promise<string | null> {
+    try {
+      const res = await fetch("/branding/mtes-logo.png");
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      const reader = new FileReader();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(String(reader.result ?? ""));
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      return dataUrl || null;
+    } catch {
+      return null;
+    }
+  }
+
+  const renderPdf = React.useCallback(async (list: Payload[], titlePeriod: string, fileSuffix: string) => {
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const logo = await fetchLogoDataUrl();
+    const workerMeta = list[0]?.worker;
+    const marginX = 40;
+
+    const drawHeader = (monthLabel: string) => {
+      const y = 40;
+      if (logo) doc.addImage(logo, "PNG", marginX, y, 48, 48);
+      doc.setFontSize(15);
+      doc.setFont("helvetica", "bold");
+      doc.text("MASS TECHNOLOGY AND ENGINEERING SOLUTION PVT. LTD", marginX + 58, y + 14);
+      doc.setFontSize(10.5);
+      doc.setFont("helvetica", "normal");
+      doc.text("KAGESHWORI MANOHARA-09, KATHMANDU", marginX + 58, y + 30);
+      doc.text("info@masstech.com.np, masstechno2020@gmail.com", marginX + 58, y + 44);
+      doc.text("9851358290, 9842995084", marginX + 58, y + 58);
+      doc.setFont("helvetica", "bold");
+      doc.text("Attendance Sheet", marginX, y + 82);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Employee: ${workerMeta?.name ?? "-"}`, marginX, y + 100);
+      doc.text(`Employee ID: ${workerMeta?.employeeId ?? "-"}`, marginX + 180, y + 100);
+      doc.text(`Designation: ${workerMeta?.designation ?? "-"}`, marginX + 360, y + 100);
+      doc.text(`Month: ${monthLabel}`, marginX, y + 116);
+      doc.text(`Period: ${titlePeriod}`, marginX + 250, y + 116);
+      return y + 130;
+    };
+
+    let yearlyOn = 0;
+    let yearlyOt = 0;
+    let yearlyOff = 0;
+    let yearlyTotal = 0;
+
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i]!;
+      if (i > 0) doc.addPage("a4");
+      const pMonth = DateTime.fromFormat(p.month, "yyyy-MM", { zone: p.zone });
+      const monthLabel = pMonth.isValid
+        ? monthLabelForMode(pMonth.year, pMonth.month, mode)
+        : p.month;
+      const startY = drawHeader(monthLabel);
+      const tableRows: Array<[string, string, string, string, string, string, string, string]> = p.entries.map((r) => [
+            mode === "bs" ? formatIsoForCalendar(r.day, "bs", p.zone) : r.day,
+        DateTime.fromISO(r.day, { zone: p.zone }).toFormat("ccc"),
+        kindLabel(r.kind),
+        r.inTime,
+        r.outTime,
+        r.dutyHours.toFixed(2),
+        r.workPlace,
+        r.remark || "-",
+      ]);
+      autoTable(doc, {
+        startY,
+        head: [["Date", "Day", "Type", "In Time", "Out Time", "Duty Hours", "Work Place", "Remark"]],
+        body: tableRows,
+        foot: [[
+          "",
+          "",
+          "Month total",
+          "",
+          "",
+          p.totalHours.toFixed(2),
+          `On-site ${p.onSiteSessionHours.toFixed(2)} | OT ${p.approvedClockOvertimeHours.toFixed(2)} | Off-site ${p.approvedOffsiteHours.toFixed(2)}`,
+          "",
+        ]],
+        styles: { fontSize: 8, cellPadding: 4.2 },
+        headStyles: { fillColor: [24, 24, 27], textColor: [255, 255, 255] },
+        footStyles: { fillColor: [245, 245, 245], textColor: [20, 20, 20] },
+      });
+      yearlyOn += p.onSiteSessionHours;
+      yearlyOt += p.approvedClockOvertimeHours;
+      yearlyOff += p.approvedOffsiteHours;
+      yearlyTotal += p.totalHours;
+    }
+
+    if (list.length > 1) {
+      doc.addPage("a4");
+      const y = drawHeader("Final summary");
+      autoTable(doc, {
+        startY: y,
+        head: [["Metric", "Hours"]],
+        body: [
+          ["On-site total", yearlyOn.toFixed(2)],
+          ["Overtime total", yearlyOt.toFixed(2)],
+          ["Off-site total", yearlyOff.toFixed(2)],
+          ["Grand total", yearlyTotal.toFixed(2)],
+          ["Regular up to cap", Math.min(yearlyTotal, MONTHLY_REGULAR_CAP_HOURS * 12).toFixed(2)],
+          ["Over cap (year aggregate)", Math.max(0, yearlyTotal - MONTHLY_REGULAR_CAP_HOURS * 12).toFixed(2)],
+        ],
+        styles: { fontSize: 10, cellPadding: 6 },
+        headStyles: { fillColor: [24, 24, 27], textColor: [255, 255, 255] },
+      });
+    }
+
+    doc.save(`working-hours-${workerMeta?.employeeId ?? workerMeta?.id ?? "employee"}-${fileSuffix}.pdf`);
+  }, []);
+
+  const downloadMonthPdf = React.useCallback(async () => {
+    if (!data) return;
+    setDownloading(true);
+    try {
+      await renderPdf([data], titleMonth, month);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to download PDF");
+    } finally {
+      setDownloading(false);
+    }
+  }, [data, month, renderPdf, titleMonth]);
+
+  const downloadYearPdf = React.useCallback(async () => {
+    setDownloading(true);
+    try {
+      const auth = getFirebaseAuth();
+      const u = auth.currentUser;
+      if (!u) throw new Error("Not signed in");
+      const token = await u.getIdToken();
+      const months = Array.from({ length: 12 }, (_, i) =>
+        DateTime.fromObject({ year, month: i + 1, day: 1 }, { zone }).toFormat("yyyy-MM")
+      );
+      const list: Payload[] = [];
+      for (const m of months) {
+        const q = new URLSearchParams({ month: m });
+        if (workerId) q.set("workerId", workerId);
+        const res = await fetch(`/api/attendance/working-hours?${q}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const json = (await res.json()) as Payload & { error?: string };
+        if (!res.ok) throw new Error(json.error ?? `Failed to load ${m}`);
+        list.push(json);
+      }
+      await renderPdf(list, `${year}`, `${year}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to download PDF");
+    } finally {
+      setDownloading(false);
+    }
+  }, [renderPdf, workerId, year, zone]);
+
+  const downloadPeriodPdf = React.useCallback(async () => {
+    setDownloading(true);
+    try {
+      const auth = getFirebaseAuth();
+      const u = auth.currentUser;
+      if (!u) throw new Error("Not signed in");
+      const token = await u.getIdToken();
+      const months =
+        periodMode === "year"
+          ? Array.from({ length: 12 }, (_, i) =>
+              DateTime.fromObject({ year: periodYear, month: i + 1, day: 1 }, { zone }).toFormat("yyyy-MM")
+            )
+          : (() => {
+              const s = DateTime.fromFormat(periodStartMonth, "yyyy-MM", { zone });
+              const e = DateTime.fromFormat(periodEndMonth, "yyyy-MM", { zone });
+              if (!s.isValid || !e.isValid || e < s) throw new Error("Invalid month range");
+              const out: string[] = [];
+              let c = s.startOf("month");
+              while (c <= e) {
+                out.push(c.toFormat("yyyy-MM"));
+                c = c.plus({ months: 1 });
+              }
+              return out;
+            })();
+
+      const list: Payload[] = [];
+      for (const m of months) {
+        const q = new URLSearchParams({ month: m });
+        if (workerId) q.set("workerId", workerId);
+        const res = await fetch(`/api/attendance/working-hours?${q}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const json = (await res.json()) as Payload & { error?: string };
+        if (!res.ok) throw new Error(json.error ?? `Failed to load ${m}`);
+        list.push(json);
+      }
+      const title =
+        periodMode === "year"
+          ? `${periodYear}`
+          : `${periodStartMonth} to ${periodEndMonth}`;
+      const suffix =
+        periodMode === "year"
+          ? `${periodYear}`
+          : `${periodStartMonth}-${periodEndMonth}`;
+      await renderPdf(list, title, suffix);
+      setPeriodOpen(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to download PDF");
+    } finally {
+      setDownloading(false);
+    }
+  }, [mode, periodEndMonth, periodMode, periodStartMonth, periodYear, renderPdf, workerId, zone]);
 
   return (
     <div className="space-y-6">
@@ -104,7 +410,115 @@ export function WorkingHoursMonthPanel({
         {loading && data ? (
           <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">Updating…</p>
         ) : null}
+        <div className="mt-3 flex flex-wrap items-end justify-end gap-2">
+          <label className="text-xs text-zinc-500">
+            Yearly PDF
+            <input
+              type="number"
+              min={2000}
+              max={2100}
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value || DateTime.now().year))}
+              className="ml-2 w-24 rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-white/15 dark:bg-zinc-950"
+            />
+          </label>
+          <Button type="button" variant="secondary" disabled={downloading} onClick={() => void downloadYearPdf()}>
+            {downloading ? "Preparing..." : "Download Year PDF"}
+          </Button>
+          <Button type="button" variant="secondary" disabled={downloading} onClick={() => setPeriodOpen(true)}>
+            Period-wise PDF
+          </Button>
+        </div>
       </div>
+      {periodOpen && mounted && typeof document !== "undefined"
+        ? createPortal(
+            <div className="fixed inset-0 z-1360 flex items-center justify-center p-4">
+              <button
+                type="button"
+                className="absolute inset-0 bg-zinc-950/70 backdrop-blur-sm"
+                aria-label="Close period modal"
+                onClick={() => setPeriodOpen(false)}
+              />
+              <Card className="relative z-1 w-full max-w-md border border-white/10 bg-zinc-950 text-zinc-100">
+                <CardHeader>
+                  <CardTitle className="text-base">Download period PDF</CardTitle>
+                  <CardDescription>Choose yearly or custom month range export.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={periodMode === "year" ? "default" : "secondary"}
+                      onClick={() => setPeriodMode("year")}
+                    >
+                      Yearly
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={periodMode === "range" ? "default" : "secondary"}
+                      onClick={() => setPeriodMode("range")}
+                    >
+                      Custom range
+                    </Button>
+                  </div>
+                  {periodMode === "year" ? (
+                    <label className="block text-sm">
+                      <span className="mb-1 block text-zinc-400">Year</span>
+                      <input
+                        type="number"
+                        min={2000}
+                        max={2100}
+                        value={periodYear}
+                        onChange={(e) => setPeriodYear(Number(e.target.value || DateTime.now().year))}
+                        className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2"
+                      />
+                    </label>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="block text-sm">
+                        <span className="mb-1 block text-zinc-400">From</span>
+                        <SearchableSelect
+                          value={periodStartMonth}
+                          onValueChange={setPeriodStartMonth}
+                          includeEmpty={false}
+                          options={monthOptions}
+                          searchPlaceholder="Search month..."
+                          triggerClassName="h-10 w-full rounded-xl border border-white/15 bg-zinc-900 px-3 text-sm text-zinc-100 hover:bg-zinc-900"
+                          popoverContentClassName="z-[1500] border-white/10 bg-zinc-950 text-zinc-100"
+                          listClassName="max-h-[min(260px,40vh)]"
+                        />
+                      </label>
+                      <label className="block text-sm">
+                        <span className="mb-1 block text-zinc-400">To</span>
+                        <SearchableSelect
+                          value={periodEndMonth}
+                          onValueChange={setPeriodEndMonth}
+                          includeEmpty={false}
+                          options={monthOptions}
+                          searchPlaceholder="Search month..."
+                          triggerClassName="h-10 w-full rounded-xl border border-white/15 bg-zinc-900 px-3 text-sm text-zinc-100 hover:bg-zinc-900"
+                          popoverContentClassName="z-[1500] border-white/10 bg-zinc-950 text-zinc-100"
+                          listClassName="max-h-[min(260px,40vh)]"
+                        />
+                      </label>
+                    </div>
+                  )}
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="secondary" onClick={() => setPeriodOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="button" disabled={downloading} onClick={() => void downloadPeriodPdf()}>
+                      {downloading ? "Preparing..." : "Download"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>,
+            document.body
+          )
+        : null}
 
       {loading && !data ? (
         <div className="space-y-4">
@@ -114,7 +528,17 @@ export function WorkingHoursMonthPanel({
       ) : null}
 
       {data ? (
-        <>
+        <div className="relative">
+          {loading ? (
+            <div className="pointer-events-auto absolute inset-0 z-20 rounded-2xl bg-zinc-950/15 backdrop-blur-[1px]">
+              <div className="space-y-4 p-3 sm:p-4">
+                <Skeleton className="h-24 w-full rounded-xl" />
+                <Skeleton className="h-24 w-full rounded-xl" />
+                <Skeleton className="h-80 w-full rounded-xl" />
+              </div>
+            </div>
+          ) : null}
+          <div className={cn(loading && "select-none blur-[1px]")}>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Card>
               <CardHeader className="pb-2">
@@ -172,76 +596,194 @@ export function WorkingHoursMonthPanel({
             <CardHeader>
               <CardTitle className="text-base">Month timeline</CardTitle>
               <CardDescription>
-                Every calendar day in {titleMonth} — on-site session, approved clock overtime, approved
-                off-site.
+                Per-day entries with editable duty hours and remarks. Same day can show on-site,
+                overtime, and off-site as separate rows.
               </CardDescription>
             </CardHeader>
             <CardContent className="overflow-x-auto">
-              <table className="w-full min-w-[520px] border-collapse text-sm">
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+                <p className="text-xs text-zinc-500">Monthly export for {titleMonth}</p>
+                <Button type="button" variant="secondary" disabled={downloading} onClick={() => void downloadMonthPdf()}>
+                  {downloading ? "Preparing PDF..." : "Download PDF"}
+                </Button>
+              </div>
+              <table className="w-full min-w-[820px] border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-zinc-200 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:border-white/10 dark:text-zinc-400">
+                    <th className="py-2 pr-3">Date</th>
                     <th className="py-2 pr-3">Day</th>
-                    <th className="py-2 pr-3 tabular-nums">On-site</th>
-                    <th className="py-2 pr-3 tabular-nums">OT</th>
-                    <th className="py-2 pr-3 tabular-nums">Off-site</th>
-                    <th className="py-2 tabular-nums">Total</th>
+                    <th className="py-2 pr-3">Type</th>
+                    <th className="py-2 pr-3">In Time</th>
+                    <th className="py-2 pr-3">Out Time</th>
+                    <th className="py-2 pr-3">Duty Hours</th>
+                    <th className="py-2 pr-3">Work Place</th>
+                    <th className="py-2">Remark</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.days.map((d) => {
-                    const dt = DateTime.fromISO(d.day, { zone });
+                  {groupedRows.map(([day, rows]) => {
+                    const dt = DateTime.fromISO(day, { zone });
                     const dow = dt.isValid ? dt.toFormat("ccc") : "";
-                    const on = msToHr(d.regularSessionMs);
-                    const ot = msToHr(d.approvedOvertimeMs);
-                    const off = msToHr(d.approvedOffsiteMs);
-                    const tot = msToHr(d.totalMs);
-                    const weekend =
-                      dt.isValid && (dt.weekday === 6 || dt.weekday === 7);
-                    return (
+                    const weekend = dt.isValid && (dt.weekday === 6 || dt.weekday === 7);
+                    return rows.map((r, idx) => (
                       <tr
-                        key={d.day}
+                        key={r.id}
                         className={cn(
                           "border-b border-zinc-100 dark:border-white/5",
                           weekend && "bg-zinc-50/80 dark:bg-white/3"
                         )}
                       >
-                        <td className="py-1.5 pr-3 font-mono text-xs text-zinc-600 dark:text-zinc-400">
-                          {d.day}
-                          {dow ? (
-                            <span className="ml-2 text-[11px] text-zinc-400">{dow}</span>
-                          ) : null}
+                        {idx === 0 ? (
+                          <>
+                            <td
+                              rowSpan={rows.length}
+                              className="py-1.5 pr-3 align-top font-mono text-xs text-zinc-600 dark:text-zinc-400"
+                            >
+                              {mode === "bs" ? formatIsoForCalendar(day, "bs", zone) : day}
+                            </td>
+                            <td
+                              rowSpan={rows.length}
+                              className="py-1.5 pr-3 align-top text-zinc-600 dark:text-zinc-300"
+                            >
+                              {dow}
+                            </td>
+                          </>
+                        ) : null}
+                        <td className="py-1.5 pr-3">{kindLabel(r.kind)}</td>
+                        <td className="py-1.5 pr-3 tabular-nums">
+                          {canEdit ? (
+                            <input
+                              type="text"
+                              value={edits[r.id]?.inTime ?? r.inTime}
+                              onChange={(e) =>
+                                setEdits((prev) => ({
+                                  ...prev,
+                                  [r.id]: {
+                                    inTime: e.target.value,
+                                    outTime: prev[r.id]?.outTime ?? r.outTime,
+                                    dutyHours: prev[r.id]?.dutyHours ?? r.dutyHours.toFixed(2),
+                                    workPlace: prev[r.id]?.workPlace ?? r.workPlace,
+                                    remark: prev[r.id]?.remark ?? r.remark,
+                                  },
+                                }))
+                              }
+                              className="w-20 rounded-md border border-zinc-300 bg-white px-1.5 py-1 text-xs dark:border-white/15 dark:bg-zinc-950"
+                            />
+                          ) : (
+                            r.inTime
+                          )}
                         </td>
-                        <td className="py-1.5 pr-3 tabular-nums text-zinc-700 dark:text-zinc-300">
-                          {fmtHr(on)}
+                        <td className="py-1.5 pr-3 tabular-nums">
+                          {canEdit ? (
+                            <input
+                              type="text"
+                              value={edits[r.id]?.outTime ?? r.outTime}
+                              onChange={(e) =>
+                                setEdits((prev) => ({
+                                  ...prev,
+                                  [r.id]: {
+                                    inTime: prev[r.id]?.inTime ?? r.inTime,
+                                    outTime: e.target.value,
+                                    dutyHours: prev[r.id]?.dutyHours ?? r.dutyHours.toFixed(2),
+                                    workPlace: prev[r.id]?.workPlace ?? r.workPlace,
+                                    remark: prev[r.id]?.remark ?? r.remark,
+                                  },
+                                }))
+                              }
+                              className="w-20 rounded-md border border-zinc-300 bg-white px-1.5 py-1 text-xs dark:border-white/15 dark:bg-zinc-950"
+                            />
+                          ) : (
+                            r.outTime
+                          )}
                         </td>
-                        <td className="py-1.5 pr-3 tabular-nums text-zinc-700 dark:text-zinc-300">
-                          {fmtHr(ot)}
+                        <td className="py-1.5 pr-3 tabular-nums">
+                          {canEdit ? (
+                            <input
+                              type="number"
+                              step="0.25"
+                              min="0"
+                              value={edits[r.id]?.dutyHours ?? r.dutyHours.toFixed(2)}
+                              onChange={(e) =>
+                                setEdits((prev) => ({
+                                  ...prev,
+                                  [r.id]: {
+                                    inTime: prev[r.id]?.inTime ?? r.inTime,
+                                    outTime: prev[r.id]?.outTime ?? r.outTime,
+                                    dutyHours: e.target.value,
+                                    workPlace: prev[r.id]?.workPlace ?? r.workPlace,
+                                    remark: prev[r.id]?.remark ?? r.remark,
+                                  },
+                                }))
+                              }
+                              className="w-20 rounded-md border border-zinc-300 bg-white px-1.5 py-1 text-xs dark:border-white/15 dark:bg-zinc-950"
+                            />
+                          ) : (
+                            fmtHr(r.dutyHours)
+                          )}
                         </td>
-                        <td className="py-1.5 pr-3 tabular-nums text-violet-700 dark:text-violet-300">
-                          {fmtHr(off)}
+                        <td className="py-1.5 pr-3">
+                          {canEdit ? (
+                            <input
+                              type="text"
+                              value={edits[r.id]?.workPlace ?? r.workPlace}
+                              onChange={(e) =>
+                                setEdits((prev) => ({
+                                  ...prev,
+                                  [r.id]: {
+                                    inTime: prev[r.id]?.inTime ?? r.inTime,
+                                    outTime: prev[r.id]?.outTime ?? r.outTime,
+                                    dutyHours: prev[r.id]?.dutyHours ?? r.dutyHours.toFixed(2),
+                                    workPlace: e.target.value,
+                                    remark: prev[r.id]?.remark ?? r.remark,
+                                  },
+                                }))
+                              }
+                              className="w-full min-w-28 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-white/15 dark:bg-zinc-950"
+                            />
+                          ) : (
+                            r.workPlace
+                          )}
                         </td>
-                        <td className="py-1.5 tabular-nums font-medium text-zinc-900 dark:text-zinc-100">
-                          {fmtHr(tot)}
+                        <td className="py-1.5">
+                          {canEdit ? (
+                            <input
+                              type="text"
+                              value={edits[r.id]?.remark ?? r.remark}
+                              onChange={(e) =>
+                                setEdits((prev) => ({
+                                  ...prev,
+                                  [r.id]: {
+                                    inTime: prev[r.id]?.inTime ?? r.inTime,
+                                    outTime: prev[r.id]?.outTime ?? r.outTime,
+                                    dutyHours: prev[r.id]?.dutyHours ?? r.dutyHours.toFixed(2),
+                                    workPlace: prev[r.id]?.workPlace ?? r.workPlace,
+                                    remark: e.target.value,
+                                  },
+                                }))
+                              }
+                              className="w-full min-w-36 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-white/15 dark:bg-zinc-950"
+                            />
+                          ) : (
+                            r.remark
+                          )}
                         </td>
                       </tr>
-                    );
+                    ));
                   })}
                   <tr className="border-t-2 border-zinc-300 bg-zinc-100/80 font-medium dark:border-white/20 dark:bg-white/6">
-                    <td className="py-2 pr-3 text-zinc-800 dark:text-zinc-200">Month total</td>
-                    <td className="py-2 pr-3 tabular-nums">{fmtHr(data.onSiteSessionHours)}</td>
-                    <td className="py-2 pr-3 tabular-nums">
-                      {fmtHr(data.approvedClockOvertimeHours)}
+                    <td className="py-2 pr-3 text-zinc-800 dark:text-zinc-200" colSpan={5}>Month total (edited)</td>
+                    <td className="py-2 pr-3 tabular-nums">{fmtHr(totalsFromRows.total)}</td>
+                    <td className="py-2 pr-3 tabular-nums text-xs text-zinc-600 dark:text-zinc-300">
+                      On-site {fmtHr(totalsFromRows.onSite)} | OT {fmtHr(totalsFromRows.overtime)} | Off-site {fmtHr(totalsFromRows.offSite)}
                     </td>
-                    <td className="py-2 pr-3 tabular-nums text-violet-800 dark:text-violet-200">
-                      {fmtHr(data.approvedOffsiteHours)}
-                    </td>
-                    <td className="py-2 tabular-nums">{fmtHr(data.totalHours)}</td>
+                    <td className="py-2 tabular-nums">Cap+OT {fmtHr(Math.max(0, totalsFromRows.total - MONTHLY_REGULAR_CAP_HOURS))}</td>
                   </tr>
                 </tbody>
               </table>
             </CardContent>
           </Card>
-        </>
+          </div>
+        </div>
       ) : null}
     </div>
   );

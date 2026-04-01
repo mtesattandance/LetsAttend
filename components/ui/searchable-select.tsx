@@ -14,7 +14,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
-export type SearchableSelectOption = { value: string; label: string };
+export type SearchableSelectOption = { value: string; label: string; keywords?: string[] };
 
 export type SearchableSelectProps = {
   value: string;
@@ -133,7 +133,7 @@ export function SearchableSelect({
               {rows.map((opt) => (
                 <CommandItem
                   key={opt.value === "" ? "__empty__" : opt.value}
-                  value={`${opt.label} ${opt.value}`}
+                  value={`${opt.label} ${(opt.keywords ?? []).join(" ")}`}
                   onSelect={() => {
                     onValueChange(opt.value);
                     setOpen(false);

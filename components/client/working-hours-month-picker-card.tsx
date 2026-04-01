@@ -3,11 +3,19 @@
 import * as React from "react";
 import { DateTime } from "luxon";
 import { CalendarClock, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { useCalendarMode } from "@/components/client/calendar-mode-context";
+import { monthLabelForMode } from "@/lib/date/bs-calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const MONTH_IX = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
+
+function bsYearFromAdYear(adYear: number, adMonthOneBased: number): string {
+  const label = monthLabelForMode(adYear, adMonthOneBased, "bs");
+  const m = /(\d{4})\s+BS$/.exec(label);
+  return m?.[1] ?? String(adYear);
+}
 
 export function WorkingHoursMonthPickerCard({
   value,
@@ -23,8 +31,11 @@ export function WorkingHoursMonthPickerCard({
   className?: string;
 }) {
   const [open, setOpen] = React.useState(false);
+  const { mode } = useCalendarMode();
   const selected = DateTime.fromFormat(value, "yyyy-MM", { zone });
-  const displayLong = selected.isValid ? selected.toFormat("LLLL yyyy") : value;
+  const displayLong = selected.isValid
+    ? monthLabelForMode(selected.year, selected.month, mode)
+    : value;
   const selYear = selected.isValid ? selected.year : DateTime.now().setZone(zone).year;
   const selMonth = selected.isValid ? selected.month : DateTime.now().setZone(zone).month;
 
@@ -72,7 +83,7 @@ export function WorkingHoursMonthPickerCard({
               {displayLong}
             </p>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              {zone} · Click to open calendar
+              {zone} · {mode === "bs" ? "BS mode" : "AD mode"}
             </p>
           </div>
           <ChevronDown
@@ -88,6 +99,7 @@ export function WorkingHoursMonthPickerCard({
         className="w-[min(calc(100vw-2rem),22rem)] border-zinc-200/90 p-0 dark:border-white/10"
         align="start"
         sideOffset={8}
+        onCloseAutoFocus={(e) => e.preventDefault()}
       >
         <div className="border-b border-zinc-100 p-3 dark:border-white/10">
           <p className="text-center text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
@@ -105,7 +117,7 @@ export function WorkingHoursMonthPickerCard({
               <ChevronLeft className="size-4" aria-hidden />
             </Button>
             <span className="min-w-[4.5rem] text-center text-base font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
-              {draftYear}
+              {mode === "bs" ? bsYearFromAdYear(draftYear, selMonth) : draftYear}
             </span>
             <Button
               type="button"
@@ -121,10 +133,13 @@ export function WorkingHoursMonthPickerCard({
         </div>
         <div className="grid grid-cols-3 gap-1.5 p-3 sm:grid-cols-4">
           {MONTH_IX.map((m) => {
-            const label = DateTime.fromObject(
-              { year: draftYear, month: m, day: 1 },
-              { zone }
-            ).toFormat("LLL");
+            const label =
+              mode === "bs"
+                ? monthLabelForMode(draftYear, m, "bs").replace(/\s+\d{4}\s+BS$/, "")
+                : DateTime.fromObject(
+                    { year: draftYear, month: m, day: 1 },
+                    { zone }
+                  ).toFormat("LLL");
             const isSel = draftYear === selYear && m === selMonth;
             return (
               <button

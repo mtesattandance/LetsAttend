@@ -118,7 +118,7 @@ service cloud.firestore {
     }
 
     match /sites/{siteId} {
-      allow read: if signedIn();
+https://chatgpt.com/backend-api/estuary/content?id=file_00000000a47471fa86c29442af1ebe35&ts=493003&p=fs&cid=1&sig=5e76c4ef6beb95d218ab52702306db4f15b0d3ac257ea0543205c01160c84d70&v=0      allow read: if signedIn();
       allow write: if isAdmin();
     }
 

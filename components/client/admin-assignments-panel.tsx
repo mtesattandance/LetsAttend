@@ -22,6 +22,7 @@ import { toast } from "sonner";
 
 type UserRow = {
   id: string;
+  employeeId?: string;
   name: string;
   email: string;
   role: string;
@@ -279,7 +280,10 @@ export function AdminAssignmentsPanel() {
                   onValueChange={setPickWorkerId}
                   options={employees.map((e) => ({
                     value: e.id,
-                    label: `${e.name?.trim() ? e.name : e.email} (${e.email})`,
+                    label: e.employeeId?.trim()
+                      ? `${e.employeeId} (${e.name?.trim() || "Employee"})`
+                      : `${e.name?.trim() || "Employee"}`,
+                    keywords: [e.employeeId ?? "", e.id, e.name ?? "", e.email ?? ""],
                   }))}
                   emptyLabel="— Select employee —"
                   searchPlaceholder="Search employees…"

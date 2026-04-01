@@ -15,6 +15,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useDashboardUser } from "@/components/client/dashboard-user-context";
+import { useCalendarMode } from "@/components/client/calendar-mode-context";
+import { dayNumberForMode, monthLabelForMode } from "@/lib/date/bs-calendar";
 import { calendarDateKeyInTimeZone } from "@/lib/date/calendar-day-key";
 import { normalizeTimeZoneId, workTimeZoneUiLabel } from "@/lib/date/time-zone";
 import { cn } from "@/lib/utils";
@@ -83,6 +85,7 @@ export function AttendanceCalendar({
 }: AttendanceCalendarProps) {
   const router = useRouter();
   const { user } = useDashboardUser();
+  const { mode } = useCalendarMode();
   const tz = normalizeTimeZoneId(user?.timeZone);
 
   const nowZ = React.useMemo(() => DateTime.now().setZone(tz), [tz]);
@@ -169,9 +172,7 @@ export function AttendanceCalendar({
     [y, m0, attended, todayKey, tz]
   );
 
-  const label = DateTime.fromObject({ year: y, month: m0 + 1, day: 1 }, { zone: tz })
-    .setLocale("en")
-    .toFormat("MMMM yyyy");
+  const label = monthLabelForMode(y, m0 + 1, mode);
 
   const zoneShort = workTimeZoneUiLabel(tz);
 
@@ -269,7 +270,9 @@ export function AttendanceCalendar({
                       router.push(`/dashboard/employee/detailwork/${cell.key}`);
                     }}
                   >
-                    <span className="font-medium">{cell.day}</span>
+                    <span className="font-medium">
+                      {mode === "bs" ? dayNumberForMode(cell.key, mode) : cell.day}
+                    </span>
                     {cell.present ? (
                       <span className="text-[10px]">✓</span>
                     ) : cell.missed ? (

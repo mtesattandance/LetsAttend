@@ -14,6 +14,17 @@ export type DayCreditedMs = {
   totalMs: number;
 };
 
+export type DayEntryRow = {
+  id: string;
+  day: string;
+  kind: "on_site" | "overtime" | "off_site";
+  inTime: string;
+  outTime: string;
+  dutyHours: number;
+  workPlace: string;
+  remark: string;
+};
+
 export function creditedMsFromDayDetail(data: WorkerDayDetailResult): Omit<DayCreditedMs, "day"> {
   const regularSessionMs =
     !data.absent && data.analytics.totalSessionMs != null
@@ -40,6 +51,13 @@ export type WorkerMonthWorkingHours = {
   month: string;
   zone: string;
   days: DayCreditedMs[];
+  entries: DayEntryRow[];
+  worker: {
+    id: string;
+    employeeId: string | null;
+    name: string | null;
+    designation: string | null;
+  };
   sums: {
     regularSessionMs: number;
     approvedOvertimeMs: number;
@@ -57,6 +75,99 @@ export type WorkerMonthWorkingHours = {
   hoursOverCapAsOvertime: number;
 };
 
+function hmFromMs(ms: number | null, zone: string): string {
+  if (ms == null || !Number.isFinite(ms) || ms <= 0) return "—";
+  return DateTime.fromMillis(ms, { zone }).toFormat("h:mm a");
+}
+
+function hoursFromMs(ms: number): number {
+  return Math.max(0, ms) / 3_600_000;
+}
+
+function buildDayEntryRows(day: string, zone: string, data: WorkerDayDetailResult): DayEntryRow[] {
+  const rows: DayEntryRow[] = [];
+  if (!data.absent) {
+    const segments = data.analytics.segments ?? [];
+    if (segments.length > 0) {
+      for (let i = 0; i < segments.length; i++) {
+        const s = segments[i]!;
+        const ms = s.durationMs ?? 0;
+        rows.push({
+          id: `${day}-on-${i}`,
+          day,
+          kind: "on_site",
+          inTime: hmFromMs(s.startMs, zone),
+          outTime: hmFromMs(s.endMs, zone),
+          dutyHours: hoursFromMs(ms),
+          workPlace: s.siteName || s.siteId || "On-site",
+          remark: "On-site session",
+        });
+      }
+    } else {
+      const start = data.checkIn?.atMs ?? null;
+      const end = data.checkOut?.atMs ?? null;
+      const ms = start != null && end != null && end >= start ? end - start : 0;
+      rows.push({
+        id: `${day}-on-0`,
+        day,
+        kind: "on_site",
+        inTime: hmFromMs(start, zone),
+        outTime: hmFromMs(end, zone),
+        dutyHours: hoursFromMs(ms),
+        workPlace: data.currentSiteName || data.currentSiteId || "On-site",
+        remark: "On-site session",
+      });
+    }
+  }
+  for (let i = 0; i < data.overtime.length; i++) {
+    const r = data.overtime[i]!;
+    if (r.status !== "approved") continue;
+    const start = r.overtimeCheckIn?.atMs ?? null;
+    const end = r.overtimeCheckOut?.atMs ?? null;
+    const ms = start != null && end != null && end >= start ? end - start : 0;
+    rows.push({
+      id: `${day}-ot-${r.id}`,
+      day,
+      kind: "overtime",
+      inTime: hmFromMs(start, zone),
+      outTime: hmFromMs(end, zone),
+      dutyHours: hoursFromMs(ms),
+      workPlace: r.siteName || r.siteId || "Overtime",
+      remark: "Approved overtime",
+    });
+  }
+  for (let i = 0; i < data.offsite.length; i++) {
+    const r = data.offsite[i]!;
+    if (r.status !== "approved") continue;
+    const hmStart = r.approvedStartHm || r.requestedStartHm;
+    const hmEnd = r.approvedEndHm || r.requestedEndHm;
+    const ms = r.durationMs ?? 0;
+    rows.push({
+      id: `${day}-off-${r.id}`,
+      day,
+      kind: "off_site",
+      inTime: hmStart || "—",
+      outTime: hmEnd || "—",
+      dutyHours: hoursFromMs(ms),
+      workPlace: "Off-site",
+      remark: "Approved off-site",
+    });
+  }
+  if (rows.length === 0) {
+    rows.push({
+      id: `${day}-none`,
+      day,
+      kind: "on_site",
+      inTime: "—",
+      outTime: "—",
+      dutyHours: 0,
+      workPlace: "—",
+      remark: "No work entry",
+    });
+  }
+  return rows;
+}
+
 export async function buildWorkerMonthWorkingHours(
   db: Firestore,
   workerId: string,
@@ -73,6 +184,7 @@ export async function buildWorkerMonthWorkingHours(
   const dim = start.daysInMonth ?? 30;
 
   const days: DayCreditedMs[] = [];
+  const entries: DayEntryRow[] = [];
   const sums = {
     regularSessionMs: 0,
     approvedOvertimeMs: 0,
@@ -80,13 +192,17 @@ export async function buildWorkerMonthWorkingHours(
     totalMs: 0,
   };
 
-  for (let d = 1; d <= dim; d++) {
-    const dayKey = DateTime.fromObject({ year, month: monthNum, day: d }, { zone: z }).toFormat(
-      "yyyy-MM-dd"
-    );
-    const detail = await buildWorkerDayDetail(db, workerId, dayKey);
+  const dayKeys = Array.from({ length: dim }, (_, i) =>
+    DateTime.fromObject({ year, month: monthNum, day: i + 1 }, { zone: z }).toFormat("yyyy-MM-dd")
+  );
+  const dayDetails = await Promise.all(dayKeys.map((dayKey) => buildWorkerDayDetail(db, workerId, dayKey)));
+
+  for (let i = 0; i < dayKeys.length; i++) {
+    const dayKey = dayKeys[i]!;
+    const detail = dayDetails[i]!;
     const part = creditedMsFromDayDetail(detail);
     days.push({ day: dayKey, ...part });
+    entries.push(...buildDayEntryRows(dayKey, z, detail));
     sums.regularSessionMs += part.regularSessionMs;
     sums.approvedOvertimeMs += part.approvedOvertimeMs;
     sums.approvedOffsiteMs += part.approvedOffsiteMs;
@@ -97,10 +213,26 @@ export async function buildWorkerMonthWorkingHours(
   const regularHoursUpToCap = Math.min(totalHours, MONTHLY_REGULAR_CAP_HOURS);
   const hoursOverCapAsOvertime = Math.max(0, totalHours - MONTHLY_REGULAR_CAP_HOURS);
 
+  const userDoc = await db.collection("users").doc(workerId).get();
+  const employeeIdRaw =
+    (typeof userDoc.get("employeeId") === "string" && userDoc.get("employeeId")) ||
+    (typeof userDoc.get("employeeCode") === "string" && userDoc.get("employeeCode")) ||
+    (typeof userDoc.get("employeeNumber") === "string" && userDoc.get("employeeNumber")) ||
+    null;
+  const workerMeta = {
+    id: workerId,
+    employeeId: employeeIdRaw,
+    name: typeof userDoc.get("name") === "string" ? (userDoc.get("name") as string) : null,
+    designation:
+      typeof userDoc.get("designation") === "string" ? (userDoc.get("designation") as string) : null,
+  };
+
   return {
     month: monthYyyyMm.trim(),
     zone: z,
     days,
+    entries,
+    worker: workerMeta,
     sums,
     totalHours,
     approvedOffsiteHours: sums.approvedOffsiteMs / 3_600_000,

@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 type WorkerRow = {
   id: string;
+  employeeId: string;
   email: string;
   name: string;
   timeZone: string;
@@ -56,7 +57,8 @@ export function FriendAttendancePage() {
     () =>
       workers.map((w) => ({
         value: w.id,
-        label: w.email ? `${w.name} (${w.email})` : w.name,
+        label: `${w.employeeId || w.id} (${w.name || "Employee"})`,
+        keywords: [w.employeeId, w.id, w.name, w.email],
       })),
     [workers]
   );
@@ -78,7 +80,7 @@ export function FriendAttendancePage() {
 
       <div className="mx-auto mb-8 max-w-2xl">
         <label className="flex flex-col gap-2 text-sm">
-          <span className="text-zinc-400">Coworker (search by name or email)</span>
+          <span className="text-zinc-400">Coworker (search by employee ID, name, or email)</span>
           {loading ? (
             <Skeleton className="h-11 w-full rounded-xl" />
           ) : (
@@ -88,7 +90,7 @@ export function FriendAttendancePage() {
               options={options}
               includeEmpty
               emptyLabel="Select a coworker…"
-              searchPlaceholder="Search name or email…"
+              searchPlaceholder="Search employee ID, name, or email…"
               emptySearchMessage="No coworkers found."
               listClassName="max-h-[min(320px,50vh)]"
             />

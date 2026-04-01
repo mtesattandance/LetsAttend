@@ -171,7 +171,8 @@ export function EmployeeOffsiteRequestPanel() {
             onValueChange={setAssigneeUid}
             options={assignees.map((a) => ({
               value: a.id,
-              label: a.name?.trim() ? `${a.name} (${a.email})` : a.email || a.id,
+              label: a.name?.trim() || "Admin",
+              keywords: [a.id, a.name, a.email],
             }))}
             emptyLabel="— Select admin —"
             searchPlaceholder="Search admins…"

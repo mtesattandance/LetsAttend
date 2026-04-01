@@ -30,6 +30,7 @@ function hasEmailPasswordProvider(): boolean {
 export function SettingsProfileEditor() {
   const { user, loading, refresh } = useDashboardUser();
   const [name, setName] = React.useState("");
+  const [designation, setDesignation] = React.useState("");
   const [nameMsg, setNameMsg] = React.useState<string | null>(null);
   const [nameBusy, setNameBusy] = React.useState(false);
 
@@ -46,7 +47,8 @@ export function SettingsProfileEditor() {
 
   React.useEffect(() => {
     if (user?.name) setName(user.name);
-  }, [user?.name]);
+    setDesignation(user?.designation ?? "");
+  }, [user?.designation, user?.name]);
 
   const saveName = async () => {
     setNameMsg(null);
@@ -61,7 +63,10 @@ export function SettingsProfileEditor() {
     setNameBusy(true);
     try {
       const db = getFirebaseDb();
-      await updateDoc(doc(db, "users", u.uid), { name: trimmed });
+      await updateDoc(doc(db, "users", u.uid), {
+        name: trimmed,
+        designation: designation.trim(),
+      });
       refresh();
       setNameMsg("Name saved.");
     } catch {
@@ -179,6 +184,15 @@ export function SettingsProfileEditor() {
           <label className="flex flex-col gap-1.5 text-sm">
             <span className={formFieldLabelClass}>Full name</span>
             <Input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className={formFieldLabelClass}>Designation</span>
+            <Input
+              value={designation}
+              onChange={(e) => setDesignation(e.target.value)}
+              placeholder="e.g. Electrician"
+              autoComplete="organization-title"
+            />
           </label>
           {nameMsg ? (
             <p className="text-sm text-zinc-600 dark:text-zinc-400">{nameMsg}</p>

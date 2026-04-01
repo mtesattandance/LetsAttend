@@ -19,6 +19,7 @@ import { toast } from "sonner";
 
 type UserRow = {
   id: string;
+  employeeId?: string;
   name: string;
   email: string;
   role: string;
@@ -178,10 +179,13 @@ export function AdminAssignSitesForm() {
                 onValueChange={setWorkerId}
                 options={workers.map((w) => ({
                   value: w.id,
-                  label: `${w.name || w.email} (${w.email})`,
+                  label: w.employeeId?.trim()
+                    ? `${w.employeeId} (${w.name || "Employee"})`
+                    : `${w.name || "Employee"}`,
+                  keywords: [w.employeeId ?? "", w.id, w.name ?? "", w.email ?? ""],
                 }))}
                 emptyLabel="Select…"
-                searchPlaceholder="Search by name or email…"
+                searchPlaceholder="Search by employee ID, name, email…"
                 listClassName="max-h-[min(320px,50vh)]"
                 triggerClassName="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-foreground"
               />

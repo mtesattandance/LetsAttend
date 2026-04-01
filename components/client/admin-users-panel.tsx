@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 
 type Row = {
   id: string;
+  employeeId?: string;
   name: string;
   email: string;
   role: string;
@@ -50,6 +51,10 @@ export function AdminUsersPanel() {
   const [resetBusy, setResetBusy] = React.useState(false);
   const [resetMsg, setResetMsg] = React.useState<string | null>(null);
   const [assignWorker, setAssignWorker] = React.useState<Row | null>(null);
+  const [deleteTarget, setDeleteTarget] = React.useState<Row | null>(null);
+  const [deletePhrase, setDeletePhrase] = React.useState("");
+  const [deleteBusy, setDeleteBusy] = React.useState(false);
+  const [archiveBusy, setArchiveBusy] = React.useState(false);
 
   const [calendarOpen, setCalendarOpen] = React.useState(false);
   const [calendarWorkerId, setCalendarWorkerId] = React.useState("");
@@ -149,6 +154,7 @@ export function AdminUsersPanel() {
   };
 
   const canManageAdmins = viewer?.role === "super_admin";
+  const canDeleteUsers = viewer?.role === "admin" || viewer?.role === "super_admin";
 
   const demoteAdmin = async (email: string, name: string) => {
     if (
@@ -177,6 +183,70 @@ export function AdminUsersPanel() {
       await load();
     } catch (e) {
       setResetMsg(e instanceof Error ? e.message : "Failed");
+    }
+  };
+
+  const deleteUser = async () => {
+    if (!deleteTarget) return;
+    if (deletePhrase.trim() !== "DELETE EMPLOYEE") {
+      setResetMsg("Type exactly: DELETE EMPLOYEE");
+      return;
+    }
+    setDeleteBusy(true);
+    setResetMsg(null);
+    try {
+      const auth = getFirebaseAuth();
+      const u = auth.currentUser;
+      if (!u) throw new Error("Not signed in");
+      const token = await u.getIdToken();
+      const res = await fetch("/api/admin/delete-user", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userId: deleteTarget.id, confirmPhrase: "DELETE EMPLOYEE" }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Failed");
+      setDeleteTarget(null);
+      setDeletePhrase("");
+      await load();
+    } catch (e) {
+      setResetMsg(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  const downloadWorkersArchive = async () => {
+    setResetMsg(null);
+    setArchiveBusy(true);
+    try {
+      const auth = getFirebaseAuth();
+      const u = auth.currentUser;
+      if (!u) throw new Error("Not signed in");
+      const token = await u.getIdToken();
+      const res = await fetch("/api/admin/export-workers-archive", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        throw new Error(data.error ?? "Failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `workers-archive-${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setResetMsg(e instanceof Error ? e.message : "Failed to download archive");
+    } finally {
+      setArchiveBusy(false);
     }
   };
 
@@ -231,7 +301,10 @@ export function AdminUsersPanel() {
                     onValueChange={setCalendarWorkerId}
                     options={users.map((r) => ({
                       value: r.id,
-                      label: `${r.name?.trim() ? r.name : r.email} (${r.email}) · ${r.role}`,
+                      label: r.employeeId?.trim()
+                        ? `${r.employeeId} (${r.name?.trim() || "User"})`
+                        : `${r.name?.trim() || "User"}`,
+                      keywords: [r.employeeId ?? "", r.id, r.name ?? "", r.email ?? "", r.role],
                     }))}
                     emptyLabel="Select worker…"
                     searchPlaceholder="Search workers…"
@@ -244,7 +317,7 @@ export function AdminUsersPanel() {
                   <AttendanceCalendar
                     workerId={calendarWorkerId}
                     title={calendarTitle}
-                    description={`Worker ID ${calendarWorkerId}. Tap any day for the full timeline in their work time zone.`}
+                    description={`Tap any day for the full timeline in their work time zone.`}
                     adminDayDetailBasePath="/dashboard/admin/workers"
                   />
                 ) : (
@@ -269,6 +342,63 @@ export function AdminUsersPanel() {
         }}
         onSaved={() => void load()}
       />
+      {deleteTarget && mounted && typeof document !== "undefined"
+        ? createPortal(
+            <div className="fixed inset-0 z-[1360] flex items-center justify-center p-4">
+              <button
+                type="button"
+                className="absolute inset-0 bg-zinc-950/75 backdrop-blur-sm"
+                aria-label="Close delete dialog"
+                onClick={() => {
+                  if (deleteBusy) return;
+                  setDeleteTarget(null);
+                  setDeletePhrase("");
+                }}
+              />
+              <Card className="relative z-[1] w-full max-w-lg border-red-500/30 bg-zinc-950 text-zinc-100">
+                <CardHeader>
+                  <CardTitle className="text-red-400">Danger zone</CardTitle>
+                  <CardDescription className="text-zinc-400">
+                    Delete <strong>{deleteTarget.name || deleteTarget.id}</strong> permanently. This will
+                    remove profile, attendance, overtime/off-site history, notifications, live tracking,
+                    and Firebase auth account.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <label className="block text-sm">
+                    <span className="mb-1 block text-zinc-400">
+                      Type <strong className="text-zinc-100">DELETE EMPLOYEE</strong> to confirm
+                    </span>
+                    <input
+                      value={deletePhrase}
+                      onChange={(e) => setDeletePhrase(e.target.value)}
+                      className="w-full rounded-xl border border-red-500/30 bg-zinc-900 px-3 py-2 font-mono text-sm"
+                      placeholder="DELETE EMPLOYEE"
+                      disabled={deleteBusy}
+                    />
+                  </label>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={deleteBusy}
+                      onClick={() => {
+                        setDeleteTarget(null);
+                        setDeletePhrase("");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="button" variant="destructive" disabled={deleteBusy} onClick={() => void deleteUser()}>
+                      {deleteBusy ? "Deleting..." : "Delete employee"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>,
+            document.body
+          )
+        : null}
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -279,18 +409,29 @@ export function AdminUsersPanel() {
               password reset link if someone forgot their password.
             </CardDescription>
           </div>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="shrink-0"
-            onClick={() => {
-              setCalendarWorkerId((id) => id || firstCalendarUserId);
-              setCalendarOpen(true);
-            }}
-          >
-            Attendance calendar
-          </Button>
+          <div className="flex shrink-0 gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={archiveBusy}
+              onClick={() => void downloadWorkersArchive()}
+            >
+              {archiveBusy ? "Preparing archive..." : "Download workers archive"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="shrink-0"
+              onClick={() => {
+                setCalendarWorkerId((id) => id || firstCalendarUserId);
+                setCalendarOpen(true);
+              }}
+            >
+              Attendance calendar
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {loading ? (
@@ -308,6 +449,7 @@ export function AdminUsersPanel() {
                     {canManageAdmins ? <th className="px-3 py-2">Admin</th> : null}
                     <th className="px-3 py-2 text-right">Assign</th>
                     <th className="px-3 py-2">View</th>
+                    {canDeleteUsers ? <th className="px-3 py-2 text-right">Delete</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -362,6 +504,27 @@ export function AdminUsersPanel() {
                           View
                         </Button>
                       </td>
+                      {canDeleteUsers ? (
+                        <td className="px-3 py-2 text-right">
+                          {r.role === "employee" ? (
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() => {
+                                setDeleteTarget(r);
+                                setDeletePhrase("");
+                                setResetMsg(null);
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          ) : (
+                            <span className="text-zinc-600">—</span>
+                          )}
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>

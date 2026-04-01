@@ -4,20 +4,10 @@ import * as React from "react";
 import { CalendarDays, ChevronDown } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DatePickerPanel } from "@/components/ui/date-picker-panel";
+import { useCalendarMode } from "@/components/client/calendar-mode-context";
+import { formatIsoForCalendar } from "@/lib/date/bs-calendar";
 import { normalizeTimeZoneId } from "@/lib/date/time-zone";
 import { cn } from "@/lib/utils";
-
-function formatDateDisplay(iso: string): string {
-  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso.trim())) return "Select date";
-  const d = new Date(`${iso.trim()}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return "Select date";
-  return d.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 export type DateFieldProps = Omit<
   React.InputHTMLAttributes<HTMLInputElement>,
@@ -53,6 +43,7 @@ export const DateField = React.forwardRef<HTMLInputElement, DateFieldProps>(
     const inputId = id ?? autoId;
     const labelTextId = label ? `${inputId}-title` : undefined;
     const tz = normalizeTimeZoneId(timeZone);
+    const { mode } = useCalendarMode();
     const [open, setOpen] = React.useState(false);
 
     return (
@@ -103,7 +94,7 @@ export const DateField = React.forwardRef<HTMLInputElement, DateFieldProps>(
                         aria-hidden
                       />
                       <span className="min-w-0 flex-1 text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                        {formatDateDisplay(value)}
+                        {formatIsoForCalendar(value, mode, tz)}
                       </span>
                       <ChevronDown
                         className={cn(
@@ -122,7 +113,7 @@ export const DateField = React.forwardRef<HTMLInputElement, DateFieldProps>(
                       aria-hidden
                     />
                     <span className="min-w-0 flex-1 text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                      {formatDateDisplay(value)}
+                      {formatIsoForCalendar(value, mode, tz)}
                     </span>
                     <ChevronDown
                       className={cn(

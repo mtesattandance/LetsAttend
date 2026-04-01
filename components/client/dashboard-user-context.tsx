@@ -11,6 +11,8 @@ export type DashboardUser = {
   name: string;
   email: string;
   role: string;
+  designation?: string;
+  employeeId?: string;
   /** Employee work sites (from Firestore). Empty until an admin assigns. */
   assignedSites: string[];
   /** IANA timezone for attendance calendar days (default Nepal). */
@@ -65,6 +67,10 @@ export function DashboardUserProvider({ children }: { children: React.ReactNode 
           const timeZone = normalizeTimeZoneId(
             typeof data?.timeZone === "string" ? data.timeZone : undefined
           );
+          const designation =
+            typeof data?.designation === "string" ? data.designation.trim() : "";
+          const employeeId =
+            typeof data?.employeeId === "string" ? data.employeeId.trim() : "";
 
           if (email && snap.exists() && fsEmail !== email) {
             try {
@@ -79,6 +85,8 @@ export function DashboardUserProvider({ children }: { children: React.ReactNode 
             name,
             email: email ?? "",
             role,
+            designation,
+            employeeId,
             assignedSites,
             timeZone,
           });
@@ -95,6 +103,8 @@ export function DashboardUserProvider({ children }: { children: React.ReactNode 
                   email: u.email ?? "",
                   role:
                     SUPER_ADMIN_EMAIL && u.email === SUPER_ADMIN_EMAIL ? "super_admin" : "employee",
+                  designation: "",
+                  employeeId: "",
                   assignedSites: [],
                   timeZone: normalizeTimeZoneId(undefined),
                 }

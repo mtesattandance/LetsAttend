@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 type UserRow = {
   id: string;
+  employeeId?: string;
   name: string;
   email: string;
   role: string;
@@ -122,7 +123,7 @@ export function AdminSearchHub() {
           <CardHeader>
             <CardTitle className="text-lg">Search workers</CardTitle>
             <CardDescription>
-              Find by name, email, or ID. Open a profile to see the attendance calendar; day cells use the
+              Find by employee ID, name, or email. Open a profile to see the attendance calendar; day cells use the
               same timeline as the Workers page.
             </CardDescription>
           </CardHeader>
@@ -164,8 +165,11 @@ export function AdminSearchHub() {
                           className="min-w-0 flex-1 flex-col items-start rounded-md px-0 py-0 text-left text-sm"
                           onClick={() => setWorkerModal(r)}
                         >
-                          <span className="font-medium text-zinc-900 dark:text-zinc-100">{r.name}</span>
-                          <span className="text-xs text-zinc-500">{r.email}</span>
+                          <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                            {r.employeeId?.trim()
+                              ? `${r.employeeId} (${r.name || "Employee"})`
+                              : r.name || "Employee"}
+                          </span>
                         </button>
                         <div className="flex shrink-0 flex-col justify-center gap-1 sm:flex-row sm:items-center">
                           {r.role === "employee" ? (
@@ -246,7 +250,6 @@ export function AdminSearchHub() {
                         <span className="font-medium text-zinc-900 dark:text-zinc-100">
                           {typeof s.name === "string" && s.name.trim() ? s.name : s.id}
                         </span>
-                        <span className="font-mono text-[10px] text-zinc-500">{s.id}</span>
                       </button>
                     </li>
                   ))
@@ -274,8 +277,11 @@ export function AdminSearchHub() {
               <X className="size-5" />
             </button>
             <div className="mb-4 pr-10">
-              <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{workerModal.name}</p>
-              <p className="text-sm text-zinc-500">{workerModal.email}</p>
+              <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                {workerModal.employeeId?.trim()
+                  ? `${workerModal.employeeId} (${workerModal.name || "Employee"})`
+                  : workerModal.name || "Employee"}
+              </p>
             </div>
             <AttendanceCalendar
               workerId={workerModal.id}
@@ -318,8 +324,7 @@ export function AdminSearchHub() {
                 ? siteModal.name
                 : siteModal.id}
             </h2>
-            <p className="mt-1 font-mono text-xs text-zinc-500">{siteModal.id}</p>
-            <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
+                        <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
               Open the Sites pipeline with this location selected — same detail tabs (overview, edit, photos,
               overtime, live map).
             </p>
