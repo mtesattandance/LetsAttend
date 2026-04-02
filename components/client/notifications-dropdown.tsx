@@ -43,6 +43,7 @@ type Row = {
   body?: string;
   kind?: string;
   read?: boolean;
+  link?: string;
   createdAt?: unknown;
   assignedSiteIds?: string[];
 };
@@ -232,9 +233,31 @@ export function NotificationsDropdown() {
                         </Button>
                       </div>
                     ) : null}
+                    {/* View button for overtime/offsite/system notifications with a link */}
+                    {row.kind !== "assignment" && row.link ? (
+                      <div className="mt-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="h-7 gap-1 text-xs"
+                          asChild
+                        >
+                          <Link
+                            href={row.link}
+                            onClick={() => {
+                              if (!row.read) void markReadIds([row.id]);
+                              setOpen(false);
+                            }}
+                          >
+                            View <ExternalLink className="size-3" />
+                          </Link>
+                        </Button>
+                      </div>
+                    ) : null}
                     {row.kind && row.kind !== "assignment" ? (
                       <p className="mt-2 text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-600">
-                        {row.kind}
+                        {row.kind.replace(/_/g, " ")}
                       </p>
                     ) : null}
                   </li>
