@@ -4,6 +4,7 @@ import { FieldValue, adminDb } from "@/lib/firebase/admin";
 import { requireBearerUser } from "@/lib/auth/verify-request";
 import { jsonError } from "@/lib/api/json-error";
 import { assertAdmin } from "@/lib/auth/assert-admin";
+import { createNotification } from "@/lib/notifications/create-notification";
 
 export const runtime = "nodejs";
 
@@ -57,6 +58,8 @@ export async function PATCH(
   const existing = snap.data() as {
     requestedStartHm?: string;
     requestedEndHm?: string;
+    workerId?: string;
+    date?: string;
   };
 
   const now = FieldValue.serverTimestamp();
@@ -86,6 +89,19 @@ export async function PATCH(
       approvedEndHm: FieldValue.delete(),
       updatedAt: now,
     });
+    if (existing.workerId) {
+      try {
+        await createNotification(db, {
+          userId: existing.workerId,
+          title: "Off-site request rejected",
+          body: parsed.data.note?.trim()
+            ? `Your off-site work request for ${existing.date ?? ""} was rejected. Note: ${parsed.data.note.slice(0, 200)}`
+            : `Your off-site work request for ${existing.date ?? ""} was rejected.`,
+          kind: "offsite_rejected",
+          link: "/dashboard/employee/offsite-work",
+        });
+      } catch { /* non-critical */ }
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -110,6 +126,19 @@ export async function PATCH(
     reviewedAt: now,
     updatedAt: now,
   });
+
+  // Notify worker on approval
+  if (existing.workerId) {
+    try {
+      await createNotification(db, {
+        userId: existing.workerId,
+        title: "Off-site work approved ✓",
+        body: `Your off-site work request for ${existing.date ?? ""} (${start}–${end}) has been approved.`,
+        kind: "offsite_approved",
+        link: "/dashboard/employee/offsite-work",
+      });
+    } catch { /* non-critical */ }
+  }
 
   return NextResponse.json({ ok: true });
 }

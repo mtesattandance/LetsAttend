@@ -2,9 +2,10 @@
 
 import * as React from "react";
 import { Suspense } from "react";
+import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, TimerOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -29,8 +30,14 @@ import { SiteSelectWithCustomRow } from "@/components/client/site-select-with-cu
 import { Skeleton } from "@/components/ui/skeleton";
 import { calendarDateKeyInTimeZone } from "@/lib/date/calendar-day-key";
 import { normalizeTimeZoneId } from "@/lib/date/time-zone";
+import { cn } from "@/lib/utils";
 
-type Site = { id: string; name?: string };
+import Link from "next/link";
+
+type Site = { id: string; name?: string; workdayStartUtc?: string; workdayEndUtc?: string };
+
+/** null = no window configured, 'early' = before shift, 'open' = within shift, 'late' = after shift */
+type WorkWindow = "early" | "open" | "late" | null;
 
 type RadiusErr = { distanceM: number; radiusM: number };
 
@@ -91,6 +98,8 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
     description?: string;
   } | null>(null);
   const [radiusError, setRadiusError] = React.useState<RadiusErr | null>(null);
+  const [workWindow, setWorkWindow] = React.useState<WorkWindow>(null);
+  const [minutesOff, setMinutesOff] = React.useState(0); // how early (negative) or late (positive) in minutes
   const [busy, setBusy] = React.useState(false);
   const [done, setDone] = React.useState(false);
   const camRef = React.useRef<CameraCaptureHandle>(null);
@@ -228,6 +237,75 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
       return "";
     });
   }, [sites, assignmentFilterIds]);
+
+  // Helper: convert a site's "HH:MM NPT" wall-clock string to epoch ms for that time today.
+  // Uses a fake-UTC trick to derive the exact TZ offset — avoids the Intl hour:24 midnight bug.
+  const wallHmToMs = React.useCallback((hm: string): number | null => {
+    const match = /^(\d{2}):(\d{2})$/.exec(hm);
+    if (!match) return null;
+    const targetH = Number(match[1]);
+    const targetM = Number(match[2]);
+    try {
+      const now = new Date();
+      // Get all date+time components for "now" in the user's display TZ.
+      const fmt = new Intl.DateTimeFormat("en-CA", {
+        timeZone: displayTz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
+      const parts = fmt.formatToParts(now);
+      const get = (type: string) =>
+        Number(parts.find((x) => x.type === type)?.value ?? 0);
+      const y  = get("year");
+      const mo = get("month");
+      const d  = get("day");
+      const lh = get("hour") % 24; // hour12:false can return 24 at midnight — clamp it
+      const lm = get("minute");
+      const ls = get("second");
+      // "Fake UTC" timestamp: treat the local wall-clock reading AS IF it were UTC.
+      const fakeNowUtcMs = Date.UTC(y, mo - 1, d, lh, lm, ls);
+      // Actual TZ offset (positive east of UTC, e.g. +5:45 for NPT = 20700000 ms)
+      const tzOffsetMs = fakeNowUtcMs - now.getTime();
+      // Target epoch: today in displayTz at targetH:targetM, converted to UTC
+      return Date.UTC(y, mo - 1, d, targetH, targetM, 0) - tzOffsetMs;
+    } catch {
+      return null;
+    }
+  }, [displayTz]);
+
+  // Evaluate work window status whenever site or time changes (re-checks every 60s)
+  React.useEffect(() => {
+    const evaluate = () => {
+      if (!siteId) { setWorkWindow(null); return; }
+      const site = sites.find((s) => s.id === siteId);
+      const startMs = site?.workdayStartUtc ? wallHmToMs(site.workdayStartUtc) : null;
+      const endMs   = site?.workdayEndUtc   ? wallHmToMs(site.workdayEndUtc)   : null;
+      const now = Date.now();
+
+      if (endMs != null && now >= endMs) {
+        setWorkWindow("late");
+        setMinutesOff(Math.round((now - endMs) / 60_000));
+      } else if (startMs != null && now < startMs) {
+        setWorkWindow("early");
+        setMinutesOff(Math.round((startMs - now) / 60_000));
+      } else if (startMs != null || endMs != null) {
+        setWorkWindow("open");
+        setMinutesOff(0);
+      } else {
+        // No window configured — allow freely
+        setWorkWindow(null);
+        setMinutesOff(0);
+      }
+    };
+    evaluate();
+    const t = window.setInterval(evaluate, 60_000);
+    return () => window.clearInterval(t);
+  }, [siteId, sites, wallHmToMs]);
 
   const assignmentMismatch =
     assignmentFilterIds !== null &&
@@ -372,7 +450,14 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
         const g = await gpsPromise;
         setGps(g);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Could not get location");
+        const msg = e instanceof Error ? e.message : "";
+        toast.error(
+          msg.toLowerCase().includes("permission") || msg.toLowerCase().includes("denied")
+            ? "Location access denied — enable GPS in your browser settings."
+            : msg.toLowerCase().includes("timeout") || msg.toLowerCase().includes("unavailable")
+              ? "GPS signal unavailable — move to an open area and try again."
+              : "Could not get your location. Make sure GPS is enabled."
+        );
         setGps(null);
       } finally {
         setBusy(false);
@@ -388,6 +473,7 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
   const primaryDisabled =
     busy ||
     done ||
+    workWindow === "late" ||
     (step === 0 && !siteId) ||
     (step === 1 && !streamReady) ||
     (step === 2 && (!gps || !selfie));
@@ -475,6 +561,112 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
             />
           )}
         </div>
+
+        {/* Work window warning — full-screen portal modal when outside the site's working hours */}
+        {(workWindow === "late" || workWindow === "early") && !done
+          ? createPortal(
+              <div
+                className="fixed inset-0 z-[8000] flex items-center justify-center p-4 sm:p-6 bg-black/75 backdrop-blur-md"
+                role="presentation"
+                onClick={() => { setSiteId(""); }}
+              >
+                <div
+                  role="alertdialog"
+                  aria-modal="true"
+                  className={cn(
+                    "relative w-full max-w-lg overflow-hidden rounded-2xl border-2 p-6 shadow-2xl ring-1",
+                    workWindow === "late"
+                      ? "border-red-500/50 bg-gradient-to-b from-zinc-900/98 to-red-950/95 shadow-[0_0_60px_-12px_rgba(239,68,68,0.65)] ring-red-400/25"
+                      : "border-amber-500/50 bg-gradient-to-b from-zinc-900/98 to-amber-950/95 shadow-[0_0_60px_-12px_rgba(251,191,36,0.5)] ring-amber-400/25"
+                  )}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* X close button — resets site selection */}
+                  <button
+                    type="button"
+                    aria-label="Dismiss and choose another site"
+                    className="absolute right-4 top-4 rounded-lg p-1.5 text-zinc-400 hover:bg-white/10 hover:text-white"
+                    onClick={() => { setSiteId(""); }}
+                  >
+                    <X className="size-5" />
+                  </button>
+
+                  <div className="flex flex-col items-center gap-5 text-center sm:flex-row sm:items-start sm:text-left">
+                    <div
+                      className={cn(
+                        "flex size-16 shrink-0 items-center justify-center rounded-full text-white shadow-lg ring-4",
+                        workWindow === "late"
+                          ? "bg-red-600 shadow-[0_0_28px_-4px_rgba(239,68,68,0.95)] ring-red-500/40"
+                          : "bg-amber-500 shadow-[0_0_28px_-4px_rgba(251,191,36,0.9)] ring-amber-400/40"
+                      )}
+                    >
+                      <TimerOff className="size-8" aria-hidden />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      {workWindow === "late" ? (
+                        <>
+                          <h2 className="text-xl font-semibold tracking-tight text-red-50">
+                            Site working hours have ended
+                          </h2>
+                          <p className="mt-3 text-sm leading-relaxed text-red-100/90">
+                            You are{" "}
+                            <strong className="font-semibold text-white">
+                              {minutesOff >= 60
+                                ? `${Math.floor(minutesOff / 60)}h ${minutesOff % 60}m`
+                                : `${minutesOff}m`}
+                            </strong>{" "}
+                            past the site&apos;s scheduled end time. Regular check-in is
+                            not allowed after hours — submit an overtime request to
+                            record attendance.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <h2 className="text-xl font-semibold tracking-tight text-amber-50">
+                            You are too early
+                          </h2>
+                          <p className="mt-3 text-sm leading-relaxed text-amber-100/90">
+                            The site&apos;s shift hasn&apos;t started yet.{" "}
+                            <strong className="font-semibold text-white">
+                              {minutesOff >= 60
+                                ? `${Math.floor(minutesOff / 60)}h ${minutesOff % 60}m`
+                                : `${minutesOff}m`}
+                            </strong>{" "}
+                            remaining before the site opens. Wait for the shift to
+                            start, or request overtime if you need to begin early.
+                          </p>
+                        </>
+                      )}
+
+                      <div className="mt-5 flex flex-wrap justify-center gap-3 sm:justify-start">
+                        <Link
+                          href="/dashboard/employee/overtime"
+                          className={cn(
+                            "inline-flex min-w-[140px] items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold hover:opacity-90",
+                            workWindow === "late"
+                              ? "bg-red-600 text-white hover:bg-red-500"
+                              : "bg-amber-500 text-black hover:bg-amber-400"
+                          )}
+                        >
+                          Request Overtime
+                        </Link>
+                        <button
+                          type="button"
+                          className="min-w-[140px] rounded-lg border border-zinc-600 px-4 py-2 text-sm text-zinc-300 hover:bg-white/5"
+                          onClick={() => { setSiteId(""); }}
+                        >
+                          Choose another site
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>,
+              document.body
+            )
+          : null}
+
 
         {radiusError ? (
           <OutOfSiteRadiusAlert

@@ -5,6 +5,7 @@ import { requireBearerUser } from "@/lib/auth/verify-request";
 import { jsonError } from "@/lib/api/json-error";
 import { assertAdmin } from "@/lib/auth/assert-admin";
 import { serializeFirestoreForJson } from "@/lib/firestore/serialize-for-json";
+import { createNotification } from "@/lib/notifications/create-notification";
 
 export const runtime = "nodejs";
 
@@ -95,6 +96,18 @@ export async function POST(req: Request) {
     createdAt: now,
     updatedAt: now,
   });
+
+  // Notify the assigned admin about the new off-site request
+  try {
+    const workerLabel = (typeof name === "string" && name.trim()) ? name.trim() : (email ?? uid);
+    await createNotification(db, {
+      userId: parsed.data.assigneeAdminUid,
+      title: "New off-site work request",
+      body: `${workerLabel} requested off-site work for ${parsed.data.date} (${parsed.data.workStartHm}–${parsed.data.workEndHm}). Reason: ${parsed.data.reason.slice(0, 120)}`,
+      kind: "offsite_request",
+      link: "/dashboard/admin/offsite-work",
+    });
+  } catch { /* non-critical */ }
 
   return NextResponse.json({ ok: true, id: ref.id });
 }

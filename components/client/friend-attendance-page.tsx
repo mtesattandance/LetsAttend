@@ -79,12 +79,24 @@ export function FriendAttendancePage() {
           {loading ? (
             <Skeleton className="h-11 w-full rounded-xl" />
           ) : (
-            <input
-              value={employeeIdQuery}
-              onChange={(e) => setEmployeeIdQuery(e.target.value)}
-              placeholder="Enter Employee ID (e.g., MTES-0001)"
-              className="h-11 w-full rounded-xl border border-zinc-200/90 bg-white px-3 text-zinc-900 dark:border-white/10 dark:bg-black/40 dark:text-zinc-100"
-            />
+            <div className="flex h-11 w-full overflow-hidden rounded-xl border border-zinc-200/90 bg-white dark:border-white/10 dark:bg-black/40">
+              {/* Fixed prefix */}
+              <span className="flex items-center bg-zinc-100/80 pl-3 pr-1 font-mono text-sm font-semibold text-zinc-500 select-none dark:bg-white/[0.06] dark:text-zinc-400">
+                MTES-
+              </span>
+              {/* Editable suffix */}
+              <input
+                value={employeeIdQuery.startsWith("MTES-")
+                  ? employeeIdQuery.slice(5)
+                  : employeeIdQuery}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/^MTES-/i, "");
+                  setEmployeeIdQuery(raw ? `MTES-${raw}` : "");
+                }}
+                placeholder="0001"
+                className="h-full flex-1 bg-transparent pl-1 pr-3 text-zinc-900 outline-none dark:text-zinc-100"
+              />
+            </div>
           )}
         </label>
         {!loading && selected ? (

@@ -33,6 +33,7 @@ type Site = {
   longitude?: unknown;
   radius?: unknown;
   workdayStartUtc?: unknown;
+  workdayEndUtc?: unknown;
   autoCheckoutUtc?: unknown;
 };
 

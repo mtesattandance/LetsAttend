@@ -3,6 +3,7 @@ import { DateTime } from "luxon";
 import { serializeFirestoreForJson } from "@/lib/firestore/serialize-for-json";
 import { DEFAULT_ATTENDANCE_TIME_ZONE } from "@/lib/date/time-zone";
 import { haversineMeters } from "@/lib/geo/haversine";
+import { zonedWallClockToUtcMillis } from "@/lib/site/zoned-schedule";
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TRACK_PING_INTERVAL_MS = 45_000;
@@ -50,6 +51,20 @@ export type TimelineEvent =
       photoUrl: string | null;
       gps: unknown;
       auto: boolean;
+    }
+  | {
+      kind: "offline_window";
+      atMs: number;
+      endMs: number;
+      durationMs: number;
+    }
+  | {
+      kind: "out_of_site_window";
+      atMs: number;
+      endMs: number;
+      durationMs: number;
+      siteId: string;
+      siteName: string;
     };
 
 export type SiteSegment = {
@@ -436,6 +451,7 @@ export async function buildWorkerDayDetail(
 
   const siteNames: Record<string, string> = {};
   const siteGeo: Record<string, { latitude: number; longitude: number; radius: number } | null> = {};
+  const siteWorkdayEnd: Record<string, string | null> = {};
   for (const sid of siteIds) {
     const s = await db.collection("sites").doc(sid).get();
     if (s.exists) {
@@ -448,6 +464,9 @@ export async function buildWorkerDayDetail(
         Number.isFinite(slat) && Number.isFinite(slng) && Number.isFinite(sr)
           ? { latitude: slat, longitude: slng, radius: sr }
           : null;
+      // Collect workday end time for this site (new field, with legacy fallback).
+      const rawEnd = s.get("workdayEndUtc") ?? s.get("autoCheckoutUtc");
+      siteWorkdayEnd[sid] = typeof rawEnd === "string" && rawEnd.trim() ? rawEnd.trim() : null;
     } else {
       siteNames[sid] = sid;
       siteGeo[sid] = null;
@@ -531,6 +550,26 @@ export async function buildWorkerDayDetail(
     });
   }
 
+  // Inject a synthetic auto-checkout event if the session is open and past the work-end time.
+  // The cron hasn't fired yet, but the deadline has passed — show a provisional checkout on the timeline.
+  if (checkIn && !checkOut && currentSiteId) {
+    const endHm = siteWorkdayEnd[currentSiteId];
+    if (endHm) {
+      const capMs = zonedWallClockToUtcMillis(day, endHm, DEFAULT_ATTENDANCE_TIME_ZONE);
+      if (capMs != null && Date.now() >= capMs) {
+        timeline.push({
+          kind: "check_out",
+          atMs: capMs,
+          siteId: currentSiteId,
+          siteName: nameOf(currentSiteId),
+          photoUrl: null,
+          gps: null,
+          auto: true,
+        });
+      }
+    }
+  }
+
   timeline.sort((a, b) => a.atMs - b.atMs);
 
   const visitedOrdered: { id: string; name: string }[] = [];
@@ -547,6 +586,31 @@ export async function buildWorkerDayDetail(
 
   const sessionOpen = !!(checkIn && !checkOut);
   const nowMs = Date.now();
+
+  // Compute the effective session end for open sessions:
+  // cap at workdayEndUtc on the attendance day so hours stop accumulating after shift end.
+  let effectiveEndMs: number;
+  let autoCheckoutInjected = false;
+  if (sessionOpen && checkInMs != null) {
+    // Determine which site's end time to use: prefer current site, else initial.
+    const capSiteId = currentSiteId ?? initialSiteId;
+    const endHm = capSiteId ? siteWorkdayEnd[capSiteId] : null;
+    let capMs: number | null = null;
+    if (endHm) {
+      capMs = zonedWallClockToUtcMillis(day, endHm, DEFAULT_ATTENDANCE_TIME_ZONE);
+    }
+    if (capMs != null && nowMs >= capMs) {
+      // Past shift end — cap at the work-end deadline.
+      effectiveEndMs = capMs;
+      autoCheckoutInjected = true;
+    } else {
+      // Still within shift — show real elapsed time.
+      effectiveEndMs = nowMs;
+    }
+  } else {
+    effectiveEndMs = nowMs; // Only used for fallback; checkOutMs preferred below.
+  }
+
   const lastEventMs =
     timeline.length > 0 ? timeline[timeline.length - 1]!.atMs : checkInMs;
   const firstEventMs = checkInMs;
@@ -555,7 +619,7 @@ export async function buildWorkerDayDetail(
       ? checkOutMs != null
         ? checkOutMs - checkInMs
         : sessionOpen
-          ? Math.max(0, nowMs - checkInMs)
+          ? Math.max(0, effectiveEndMs - checkInMs)
           : null
       : null;
 
@@ -586,13 +650,24 @@ export async function buildWorkerDayDetail(
         durationMs: checkOutMs - segStart,
       });
     } else if (sessionOpen) {
-      segments.push({
-        siteId: segSite,
-        siteName: nameOf(segSite),
-        startMs: segStart,
-        endMs: null,
-        durationMs: null,
-      });
+      if (autoCheckoutInjected) {
+        // Session is open but past work-end — show the capped segment.
+        segments.push({
+          siteId: segSite,
+          siteName: nameOf(segSite),
+          startMs: segStart,
+          endMs: effectiveEndMs,
+          durationMs: effectiveEndMs - segStart,
+        });
+      } else {
+        segments.push({
+          siteId: segSite,
+          siteName: nameOf(segSite),
+          startMs: segStart,
+          endMs: null,
+          durationMs: null,
+        });
+      }
     }
   }
 
@@ -658,6 +733,31 @@ export async function buildWorkerDayDetail(
       }
     }
   }
+
+  // Push offline and out-of-site windows into the timeline so they appear chronologically.
+  for (const w of offlineWindows) {
+    timeline.push({
+      kind: "offline_window",
+      atMs: w.startMs,
+      endMs: w.endMs,
+      durationMs: w.durationMs,
+    });
+  }
+  for (const w of outOfSiteWindows) {
+    const seg = segments.find(
+      (s) => w.startMs >= s.startMs && w.startMs < (s.endMs ?? Infinity)
+    );
+    timeline.push({
+      kind: "out_of_site_window",
+      atMs: w.startMs,
+      endMs: w.endMs,
+      durationMs: w.durationMs,
+      siteId: seg?.siteId ?? "",
+      siteName: seg?.siteName ?? "",
+    });
+  }
+  // Re-sort so tracking events interleave correctly with check-in/switch/check-out.
+  timeline.sort((a, b) => a.atMs - b.atMs);
 
   return {
     ok: true,

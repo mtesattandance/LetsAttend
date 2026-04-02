@@ -4,12 +4,38 @@ import * as React from "react";
 import Link from "next/link";
 import { onAuthStateChanged } from "firebase/auth";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Bell } from "lucide-react";
+import { Bell, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import { cn } from "@/lib/utils";
 import { NotificationsListSkeleton } from "@/components/client/dashboard-skeletons";
 import { workCheckInHrefFromAssignedSiteIds } from "@/lib/client/work-assignment-href";
+
+/** Synthesizes a soft bell ding via Web Audio API — no audio file required. */
+function playNotificationSound() {
+  try {
+    const ctx = new AudioContext();
+    const now = ctx.currentTime;
+    // Two oscillators: fundamental + harmonic for a bell-like timbre
+    const freqs = [880, 1320] as const;
+    for (const freq of freqs) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 1.2);
+    }
+    // Auto-close context after sound finishes to free resources
+    setTimeout(() => void ctx.close(), 1500);
+  } catch {
+    // Silently fail if Web Audio API is unavailable
+  }
+}
 
 type Row = {
   id: string;
@@ -29,6 +55,7 @@ export function NotificationsDropdown() {
   const [open, setOpen] = React.useState(false);
   const [items, setItems] = React.useState<Row[]>([]);
   const [loading, setLoading] = React.useState(false);
+  const prevUnreadRef = React.useRef<number | null>(null);
 
   const authHeaders = React.useCallback(async () => {
     const auth = getFirebaseAuth();
@@ -82,6 +109,14 @@ export function NotificationsDropdown() {
   }, [open, load]);
 
   const unread = items.filter((i) => !i.read).length;
+
+  // Play a ding when new unread notifications arrive (count increases)
+  React.useEffect(() => {
+    if (prevUnreadRef.current !== null && unread > prevUnreadRef.current) {
+      playNotificationSound();
+    }
+    prevUnreadRef.current = unread;
+  }, [unread]);
 
   const markReadVisible = async () => {
     const ids = items.filter((i) => !i.read).map((i) => i.id);
@@ -206,6 +241,16 @@ export function NotificationsDropdown() {
                 ))}
               </ul>
             )}
+          </div>
+          {/* View all footer */}
+          <div className="border-t border-zinc-200/80 px-4 py-2.5 dark:border-white/10">
+            <Link
+              href="/dashboard/employee/notifications"
+              className="flex items-center justify-center gap-1.5 text-xs font-medium text-cyan-600 hover:text-cyan-700 dark:text-cyan-400 dark:hover:text-cyan-300"
+              onClick={() => setOpen(false)}
+            >
+              View all notifications <ExternalLink className="size-3" />
+            </Link>
           </div>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

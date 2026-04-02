@@ -214,25 +214,35 @@ export function WorkingHoursMonthPanel({
     const marginX = 40;
 
     const drawHeader = (monthLabel: string) => {
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const centerX = pageWidth / 2;
       const y = 40;
+      // Logo left-aligned
       if (logo) doc.addImage(logo, "PNG", marginX, y, 48, 48);
-      doc.setFontSize(15);
+      // Company name centered
+      doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
-      doc.text("MASS TECHNOLOGY AND ENGINEERING SOLUTION PVT. LTD", marginX + 58, y + 14);
-      doc.setFontSize(10.5);
+      doc.text("MASS TECHNOLOGY AND ENGINEERING SOLUTION PVT. LTD", centerX, y + 16, { align: "center" });
+      doc.setFontSize(9.5);
       doc.setFont("helvetica", "normal");
-      doc.text("KAGESHWORI MANOHARA-09, KATHMANDU", marginX + 58, y + 30);
-      doc.text("info@masstech.com.np, masstechno2020@gmail.com", marginX + 58, y + 44);
-      doc.text("9851358290, 9842995084", marginX + 58, y + 58);
+      doc.text("KAGESHWORI MANOHARA-09, KATHMANDU", centerX, y + 30, { align: "center" });
+      doc.text("info@masstech.com.np  |  masstechno2020@gmail.com", centerX, y + 42, { align: "center" });
+      doc.text("9851358290  |  9842995084", centerX, y + 54, { align: "center" });
+      // Divider
+      doc.setDrawColor(180, 180, 180);
+      doc.line(marginX, y + 62, pageWidth - marginX, y + 62);
+      // "Attendance Sheet" centered bold
+      doc.setFontSize(12);
       doc.setFont("helvetica", "bold");
-      doc.text("Attendance Sheet", marginX, y + 82);
+      doc.text("Attendance Sheet", centerX, y + 78, { align: "center" });
       doc.setFont("helvetica", "normal");
-      doc.text(`Employee: ${workerMeta?.name ?? "-"}`, marginX, y + 100);
-      doc.text(`Employee ID: ${workerMeta?.employeeId ?? "-"}`, marginX + 180, y + 100);
-      doc.text(`Designation: ${workerMeta?.designation ?? "-"}`, marginX + 360, y + 100);
-      doc.text(`Month: ${monthLabel}`, marginX, y + 116);
-      doc.text(`Period: ${titlePeriod}`, marginX + 250, y + 116);
-      return y + 130;
+      doc.setFontSize(9.5);
+      doc.text(`Employee: ${workerMeta?.name ?? "-"}`, marginX, y + 96);
+      doc.text(`Employee ID: ${workerMeta?.employeeId ?? "-"}`, marginX + 175, y + 96);
+      doc.text(`Designation: ${workerMeta?.designation ?? "-"}`, marginX + 355, y + 96);
+      doc.text(`Month: ${monthLabel}`, marginX, y + 110);
+      doc.text(`Period: ${titlePeriod}`, marginX + 250, y + 110);
+      return y + 126;
     };
 
     let yearlyOn = 0;

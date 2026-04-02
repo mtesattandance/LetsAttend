@@ -61,7 +61,7 @@ export type DayDetailPayload =
         auto: boolean;
       } | null;
       timeline: {
-        kind: "check_in" | "site_switch" | "check_out";
+        kind: "check_in" | "site_switch" | "check_out" | "offline_window" | "out_of_site_window";
         atMs: number;
         [key: string]: unknown;
       }[];
@@ -584,7 +584,14 @@ export function AttendanceDayDetailView({
               <ol className="relative space-y-0 border-l border-zinc-300 pl-6 dark:border-white/15">
                 {data.timeline.map((ev, idx) => (
                   <li key={idx} className="mb-6 ml-1 last:mb-0">
-                    <span className="absolute -left-1.5 mt-1.5 size-3 rounded-full border-2 border-violet-500 bg-white dark:bg-zinc-950" />
+                    <span className={cn(
+                      "absolute -left-1.5 mt-1.5 size-3 rounded-full border-2 bg-white dark:bg-zinc-950",
+                      ev.kind === "offline_window"
+                        ? "border-orange-500"
+                        : ev.kind === "out_of_site_window"
+                          ? "border-red-500"
+                          : "border-violet-500"
+                    )} />
                     {ev.kind === "check_in" ? (
                       <div className="space-y-2">
                         <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400/90">
@@ -643,6 +650,39 @@ export function AttendanceDayDetailView({
                           />
                         ) : null}
                       </div>
+                    ) : ev.kind === "offline_window" ? (
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-orange-700 dark:text-orange-400">
+                          Offline / No ping
+                        </p>
+                        <p className="text-xs text-zinc-500">
+                          {fmtLocal(ev.atMs, displayTz)}{" → "}
+                          {fmtLocal((ev as unknown as { endMs: number }).endMs, displayTz)}
+                        </p>
+                        <p className="text-xs text-orange-800 dark:text-orange-300/90">
+                          Gap: {fmtDuration((ev as unknown as { durationMs: number }).durationMs)}
+                        </p>
+                        <p className="text-[10px] text-zinc-500">
+                          Internet was off or app stopped sending pings during this window.
+                        </p>
+                      </div>
+                    ) : ev.kind === "out_of_site_window" ? (
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-400">
+                          Out of site
+                        </p>
+                        <p className="text-xs text-zinc-500">
+                          {fmtLocal(ev.atMs, displayTz)}{" → "}
+                          {fmtLocal((ev as unknown as { endMs: number }).endMs, displayTz)}
+                        </p>
+                        <p className="text-xs text-red-800 dark:text-red-300/90">
+                          {fmtDuration((ev as unknown as { durationMs: number }).durationMs)} outside{" "}
+                          <strong>{(ev as unknown as { siteName: string }).siteName || "site"}</strong> geofence
+                        </p>
+                        <p className="text-[10px] text-zinc-500">
+                          GPS was outside the site radius during this window.
+                        </p>
+                      </div>
                     ) : (
                       <div className="space-y-2">
                         <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
@@ -684,19 +724,36 @@ export function AttendanceDayDetailView({
               </div>
               <div>
                 <dt className="text-zinc-500">Final check-out</dt>
-                <dd className="font-medium text-zinc-900 dark:text-zinc-100">
-                  {data.checkOut ? (
-                    <>
+                {data.checkOut ? (
+                  <>
+                    <dd className="font-medium text-zinc-900 dark:text-zinc-100">
                       {data.checkOut.siteName}
                       {data.checkOut.auto ? (
                         <span className="ml-2 text-xs text-amber-400">auto</span>
                       ) : null}
+                    </dd>
+                    <dd className="font-mono text-xs text-zinc-500">{fmtLocal(data.checkOut.atMs, displayTz)}</dd>
+                  </>
+                ) : (() => {
+                  // Check if a synthetic auto-checkout was injected into the timeline.
+                  const synth = data.timeline.find(
+                    (e) => e.kind === "check_out" && (e as { auto?: boolean }).auto === true
+                  ) as { atMs: number } | undefined;
+                  return synth ? (
+                    <>
+                      <dd className="font-medium text-amber-700 dark:text-amber-300">
+                        Auto check-out
+                        <span className="ml-2 text-xs text-amber-500/80">(pending)</span>
+                      </dd>
+                      <dd className="font-mono text-xs text-zinc-500">{fmtLocal(synth.atMs, displayTz)}</dd>
                     </>
                   ) : (
-                    <span className="text-zinc-500">Still open</span>
-                  )}
-                </dd>
-                <dd className="font-mono text-xs text-zinc-500">{fmtLocal(data.checkOut?.atMs, displayTz)}</dd>
+                    <>
+                      <dd className="font-medium text-zinc-500">Still open</dd>
+                      <dd className="font-mono text-xs text-zinc-600">—</dd>
+                    </>
+                  );
+                })()}
               </div>
             </CardContent>
           </Card>

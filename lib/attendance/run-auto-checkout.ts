@@ -80,25 +80,39 @@ export async function runAutoCheckout(): Promise<{ processed: number; errors: st
       const siteSnap = await db.collection("sites").doc(siteId).get();
       if (!siteSnap.exists) continue;
       const site = siteSnap.data()!;
+      // workdayEndUtc is the new field; fall back to legacy autoCheckoutUtc for old site docs;
+      // ultimate fallback is 17:00 (5 PM NPT) — the typical end of a regular shift.
       const hhmm =
-        typeof site.autoCheckoutUtc === "string" && site.autoCheckoutUtc.trim()
+        (typeof site.workdayEndUtc === "string" && site.workdayEndUtc.trim()
+          ? site.workdayEndUtc.trim()
+          : null) ??
+        (typeof site.autoCheckoutUtc === "string" && site.autoCheckoutUtc.trim()
           ? site.autoCheckoutUtc.trim()
-          : "23:59";
+          : null) ??
+        "17:00";
 
       const siteTz = scheduleTimeZoneFromSiteData(site);
       const deadline = zonedWallClockToUtcMillis(dayKey, hhmm, siteTz);
       if (deadline == null) continue;
 
-      if (nowMs < deadline) continue;
+      // Grace period: employees can manually check out within this window after workdayEndUtc.
+      // Auto-checkout fires only AFTER the grace window expires.
+      const graceMinutes = Number(site.checkoutGraceMinutes);
+      const graceMs = (Number.isFinite(graceMinutes) && graceMinutes > 0 ? graceMinutes : 20) * 60_000;
+      const graceDeadline = deadline + graceMs;
+
+      // Not yet past the grace window — skip for now.
+      if (nowMs < graceDeadline) continue;
 
       const lat = Number(site.latitude);
       const lng = Number(site.longitude);
-      const t = FieldValue.serverTimestamp();
+      // Record checkout AT workdayEndUtc (not at grace deadline) so grace time is never counted.
+      const checkoutTime = new Date(deadline);
 
       await doc.ref.set(
         {
           checkOut: {
-            time: t,
+            time: checkoutTime,
             gps: {
               latitude: Number.isFinite(lat) ? lat : 0,
               longitude: Number.isFinite(lng) ? lng : 0,
@@ -106,7 +120,7 @@ export async function runAutoCheckout(): Promise<{ processed: number; errors: st
             photoUrl: placeholderPhotoUrl(),
             auto: true,
           },
-          updatedAt: t,
+          updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
       );

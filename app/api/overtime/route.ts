@@ -5,6 +5,7 @@ import { requireBearerUser } from "@/lib/auth/verify-request";
 import { jsonError } from "@/lib/api/json-error";
 import { assertAdmin } from "@/lib/auth/assert-admin";
 import { serializeFirestoreForJson } from "@/lib/firestore/serialize-for-json";
+import { createNotification } from "@/lib/notifications/create-notification";
 
 export const runtime = "nodejs";
 
@@ -54,6 +55,22 @@ export async function POST(req: Request) {
     createdAt: now,
     updatedAt: now,
   });
+
+  // Notify all admins & super_admins about the new overtime request
+  try {
+    const adminSnap = await db.collection("users")
+      .where("role", "in", ["admin", "super_admin"]).get();
+    const workerLabel = (typeof name === "string" && name.trim()) ? name.trim() : (email ?? uid);
+    await Promise.all(adminSnap.docs.map((ad) =>
+      createNotification(db, {
+        userId: ad.id,
+        title: "New overtime request",
+        body: `${workerLabel} has requested overtime for ${parsed.data.date}. Reason: ${parsed.data.reason.slice(0, 120)}`,
+        kind: "overtime_request",
+        link: "/dashboard/admin/overtime",
+      })
+    ));
+  } catch { /* non-critical */ }
 
   return NextResponse.json({ ok: true, id: ref.id });
 }

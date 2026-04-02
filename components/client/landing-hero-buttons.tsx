@@ -6,12 +6,15 @@ import { onAuthStateChanged } from "firebase/auth";
 import {
   ArrowRight,
   ArrowRightLeft,
+  Building2,
+  ClipboardList,
   Clock,
   LayoutDashboard,
   LogIn,
   LogOut,
   Menu,
   Sparkles,
+  UserPlus,
 } from "lucide-react";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import { Button } from "@/components/ui/button";
@@ -69,6 +72,24 @@ export function LandingHeroButtons() {
                 <Link href="/dashboard/employee#employee-site-switch" className="flex items-center gap-2">
                   <ArrowRightLeft className="size-4" aria-hidden />
                   Switch site
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/dashboard/employee/offsite" className="flex items-center gap-2">
+                  <Building2 className="size-4" aria-hidden />
+                  Off-site work
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/dashboard/employee/friend" className="flex items-center gap-2">
+                  <UserPlus className="size-4" aria-hidden />
+                  Friend check-in
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/dashboard/employee/assigned" className="flex items-center gap-2">
+                  <ClipboardList className="size-4" aria-hidden />
+                  Assigned
                 </Link>
               </DropdownMenuItem>
             </DropdownMenuContent>

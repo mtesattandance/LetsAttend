@@ -19,7 +19,8 @@ const postBodySchema = z.object({
   longitude: z.number().finite(),
   radius: z.number().positive().max(5000),
   workdayStartUtc: utcHm.optional(),
-  autoCheckoutUtc: utcHm.optional(),
+  workdayEndUtc: utcHm.optional(),
+  checkoutGraceMinutes: z.number().int().min(1).max(120).optional(),
 });
 
 /** Employees (and admins) create a real site document — same shape as admin POST. */
@@ -59,7 +60,8 @@ export async function POST(req: Request) {
     ...(parsed.data.workdayStartUtc
       ? { workdayStartUtc: parsed.data.workdayStartUtc }
       : {}),
-    autoCheckoutUtc: parsed.data.autoCheckoutUtc ?? "23:59",
+    workdayEndUtc: parsed.data.workdayEndUtc ?? "17:00",
+    checkoutGraceMinutes: parsed.data.checkoutGraceMinutes ?? 20,
     createdBy: uid,
     createdByEmail: email ?? null,
     workerCreated: role === "employee",

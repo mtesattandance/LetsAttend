@@ -22,10 +22,15 @@ const bodySchema = z.object({
   /** Optional expected start of workday (24h wall time, NPT), for display. */
   workdayStartUtc: utcHm.optional(),
   /**
-   * End of workday (24h wall time, NPT). If the worker is still checked in after this time on that
-   * calendar day, the auto-checkout job will close the session (server-side). Defaults to 23:59.
+   * End of workday (24h wall time, NPT). If still checked in after this time the auto-checkout
+   * job will close the session. Defaults to 17:00.
    */
-  autoCheckoutUtc: utcHm.optional(),
+  workdayEndUtc: utcHm.optional(),
+  /**
+   * Minutes after workdayEndUtc during which employees can still manually check out with a selfie.
+   * The recorded checkout time is always capped at workdayEndUtc. Default: 20 min.
+   */
+  checkoutGraceMinutes: z.number().int().min(1).max(120).optional(),
 });
 
 const deleteSchema = z.object({
@@ -40,7 +45,8 @@ const patchSchema = z.object({
   longitude: z.number().finite(),
   radius: z.number().positive().max(5000),
   workdayStartUtc: z.union([utcHm, z.literal("")]).optional(),
-  autoCheckoutUtc: utcHm.optional(),
+  workdayEndUtc: utcHm.optional(),
+  checkoutGraceMinutes: z.number().int().min(1).max(120).optional(),
 });
 
 export async function POST(req: Request) {
@@ -74,7 +80,8 @@ export async function POST(req: Request) {
     ...(parsed.data.workdayStartUtc
       ? { workdayStartUtc: parsed.data.workdayStartUtc }
       : {}),
-    autoCheckoutUtc: parsed.data.autoCheckoutUtc ?? "23:59",
+    workdayEndUtc: parsed.data.workdayEndUtc ?? "17:00",
+    checkoutGraceMinutes: parsed.data.checkoutGraceMinutes ?? 20,
     createdBy: decoded.uid,
     createdAt: now,
   });
@@ -115,7 +122,8 @@ export async function PATCH(req: Request) {
     latitude: parsed.data.latitude,
     longitude: parsed.data.longitude,
     radius: parsed.data.radius,
-    autoCheckoutUtc: parsed.data.autoCheckoutUtc ?? "23:59",
+    workdayEndUtc: parsed.data.workdayEndUtc ?? "17:00",
+    checkoutGraceMinutes: parsed.data.checkoutGraceMinutes ?? 20,
     updatedAt: FieldValue.serverTimestamp(),
   };
 

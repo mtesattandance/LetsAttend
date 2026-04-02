@@ -44,7 +44,7 @@ export async function GET(req: Request) {
       checkOut: null,
       siteSwitchLogs: [],
       workdayStartUtc: null as string | null,
-      autoCheckoutUtc: null as string | null,
+      workdayEndUtc: null as string | null,
     });
   }
 
@@ -53,7 +53,7 @@ export async function GET(req: Request) {
 
   let siteName: string | null = null;
   let workdayStartUtc: string | null = null;
-  let autoCheckoutUtc: string | null = null;
+  let workdayEndUtc: string | null = null;
 
   if (siteId) {
     const siteSnap = await db.collection("sites").doc(siteId).get();
@@ -62,8 +62,14 @@ export async function GET(req: Request) {
       siteName = typeof s.name === "string" ? s.name : siteId;
       workdayStartUtc =
         typeof s.workdayStartUtc === "string" ? s.workdayStartUtc : null;
-      autoCheckoutUtc =
-        typeof s.autoCheckoutUtc === "string" ? s.autoCheckoutUtc : "23:59";
+      // Read new field; fall back to legacy autoCheckoutUtc for old site docs.
+      workdayEndUtc =
+        (typeof s.workdayEndUtc === "string" && s.workdayEndUtc.trim()
+          ? s.workdayEndUtc.trim()
+          : null) ??
+        (typeof s.autoCheckoutUtc === "string" && s.autoCheckoutUtc.trim()
+          ? s.autoCheckoutUtc.trim()
+          : null);
     }
   }
 
@@ -145,7 +151,7 @@ export async function GET(req: Request) {
     siteId,
     siteName,
     workdayStartUtc,
-    autoCheckoutUtc,
+    workdayEndUtc,
     checkIn: checkIn
       ? {
           atMs: tsMs(checkIn.time),

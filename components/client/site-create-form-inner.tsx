@@ -28,7 +28,7 @@ export function SiteCreateFormInner({
   const [longitude, setLongitude] = React.useState("");
   const [radius, setRadius] = React.useState("80");
   const [workdayStartUtc, setWorkdayStartUtc] = React.useState("09:00");
-  const [autoCheckoutUtc, setAutoCheckoutUtc] = React.useState("23:59");
+  const [workdayEndUtc, setWorkdayEndUtc] = React.useState("17:00");
   const [msg, setMsg] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [placeQuery, setPlaceQuery] = React.useState("");
@@ -139,7 +139,7 @@ export function SiteCreateFormInner({
           longitude: lng,
           radius: rad,
           workdayStartUtc: workdayStartUtc.trim() || undefined,
-          autoCheckoutUtc: autoCheckoutUtc.trim() || undefined,
+          workdayEndUtc: workdayEndUtc.trim() || undefined,
         }),
       });
       const data = (await res.json()) as { ok?: boolean; id?: string; error?: string };
@@ -147,7 +147,7 @@ export function SiteCreateFormInner({
       setMsg(`Site created: ${data.id}`);
       setName("");
       setWorkdayStartUtc("09:00");
-      setAutoCheckoutUtc("23:59");
+      setWorkdayEndUtc("17:00");
       setPlaceQuery("");
       setGeoResults([]);
       if (data.id) onCreated?.(data.id);
@@ -310,10 +310,10 @@ export function SiteCreateFormInner({
             variant={light ? "light" : "dark"}
           />
           <UtcTimePicker
-            id="create-auto-checkout"
-            label="Auto check-out after (NPT)"
-            value={autoCheckoutUtc}
-            onChange={setAutoCheckoutUtc}
+            id="create-work-end"
+            label="Work end time (NPT)"
+            value={workdayEndUtc}
+            onChange={setWorkdayEndUtc}
             variant={light ? "light" : "dark"}
           />
         </div>
@@ -323,8 +323,7 @@ export function SiteCreateFormInner({
             light ? "text-zinc-600 dark:text-zinc-400" : "text-zinc-500"
           )}
         >
-          If a worker is still checked in after this time on a calendar day in NPT (or the next day begins
-          with an open session), the server can record an automatic check-out.
+          Workers still checked in after the work end time will be automatically checked out by the system.
         </p>
         <Button type="submit" disabled={busy}>
           {busy ? "Saving…" : "Create site"}

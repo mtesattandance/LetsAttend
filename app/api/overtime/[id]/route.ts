@@ -4,6 +4,7 @@ import { FieldValue, adminDb } from "@/lib/firebase/admin";
 import { requireBearerUser } from "@/lib/auth/verify-request";
 import { jsonError } from "@/lib/api/json-error";
 import { assertAdmin } from "@/lib/auth/assert-admin";
+import { createNotification } from "@/lib/notifications/create-notification";
 
 export const runtime = "nodejs";
 
@@ -46,6 +47,8 @@ export async function PATCH(
 
   const existing = snap.data() as {
     siteId?: string | null;
+    workerId?: string;
+    date?: string;
   };
 
   const mergedSite =
@@ -82,6 +85,20 @@ export async function PATCH(
       overtimeCheckIn: FieldValue.delete(),
       overtimeCheckOut: FieldValue.delete(),
     });
+    // Notify worker
+    if (existing.workerId) {
+      try {
+        await createNotification(db, {
+          userId: existing.workerId,
+          title: "Overtime request rejected",
+          body: parsed.data.note?.trim()
+            ? `Your overtime request for ${existing.date ?? ""} was rejected. Note: ${parsed.data.note.slice(0, 200)}`
+            : `Your overtime request for ${existing.date ?? ""} was rejected.`,
+          kind: "overtime_rejected",
+          link: "/dashboard/employee/overtime",
+        });
+      } catch { /* non-critical */ }
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -108,6 +125,19 @@ export async function PATCH(
   }
 
   await ref.update(update);
+
+  // Notify worker on approval
+  if (parsed.data.status === "approved" && existing.workerId) {
+    try {
+      await createNotification(db, {
+        userId: existing.workerId,
+        title: "Overtime request approved ✓",
+        body: `Your overtime request for ${existing.date ?? ""} has been approved. You can now check in for overtime.`,
+        kind: "overtime_approved",
+        link: "/dashboard/employee/overtime",
+      });
+    } catch { /* non-critical */ }
+  }
 
   return NextResponse.json({ ok: true });
 }

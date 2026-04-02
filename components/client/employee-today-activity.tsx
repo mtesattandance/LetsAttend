@@ -24,7 +24,7 @@ type TodayPayload = {
   siteId: string | null;
   siteName: string | null;
   workdayStartUtc: string | null;
-  autoCheckoutUtc: string | null;
+  workdayEndUtc: string | null;
   checkIn: {
     atMs: number | null;
     photoUrl: string | null;
@@ -167,14 +167,14 @@ export function EmployeeTodayActivity() {
                     </span>
                   </li>
                 ) : null}
-                <li>
-                  Auto check-out time ({zoneLabel}):{" "}
-                  <span className="font-mono text-white">
-                    {formatWallHm12h(data.autoCheckoutUtc ?? "23:59")}
-                  </span>{" "}
-                  — if you stay checked in past this time, the system may close your session
-                  automatically.
-                </li>
+                {data.workdayEndUtc ? (
+                  <li>
+                    Work end ({zoneLabel}):{" "}
+                    <span className="font-mono text-white">
+                      {formatWallHm12h(data.workdayEndUtc)}
+                    </span>
+                  </li>
+                ) : null}
               </ul>
             </CardContent>
           </Card>

@@ -14,7 +14,10 @@ export type EditableSite = {
   longitude?: unknown;
   radius?: unknown;
   workdayStartUtc?: unknown;
+  /** New field. Legacy docs may only have autoCheckoutUtc. */
+  workdayEndUtc?: unknown;
   autoCheckoutUtc?: unknown;
+  checkoutGraceMinutes?: unknown;
 };
 
 function numStr(v: unknown, fallback: string) {
@@ -34,7 +37,8 @@ export function AdminEditSiteForm({
   const [longitude, setLongitude] = React.useState("");
   const [radius, setRadius] = React.useState("80");
   const [workdayStartUtc, setWorkdayStartUtc] = React.useState("");
-  const [autoCheckoutUtc, setAutoCheckoutUtc] = React.useState("23:59");
+  const [workdayEndUtc, setWorkdayEndUtc] = React.useState("17:00");
+  const [checkoutGraceMinutes, setCheckoutGraceMinutes] = React.useState("20");
   const [msg, setMsg] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [placeQuery, setPlaceQuery] = React.useState("");
@@ -57,14 +61,20 @@ export function AdminEditSiteForm({
         ? site.workdayStartUtc.trim()
         : ""
     );
-    setAutoCheckoutUtc(
-      typeof site.autoCheckoutUtc === "string" && site.autoCheckoutUtc.trim()
-        ? site.autoCheckoutUtc.trim()
-        : "23:59"
+    // Prefer new workdayEndUtc field; fall back to legacy autoCheckoutUtc for old site docs.
+    setWorkdayEndUtc(
+      (typeof site.workdayEndUtc === "string" && (site.workdayEndUtc as string).trim()
+        ? (site.workdayEndUtc as string).trim()
+        : null) ??
+      (typeof site.autoCheckoutUtc === "string" && (site.autoCheckoutUtc as string).trim()
+        ? (site.autoCheckoutUtc as string).trim()
+        : "17:00")
     );
+    const grace = Number(site.checkoutGraceMinutes);
+    setCheckoutGraceMinutes(Number.isFinite(grace) && grace > 0 ? String(grace) : "20");
     setRecenterAt(null);
     setRecenterSeq((n) => n + 1);
-  }, [site.id, site.name, site.latitude, site.longitude, site.radius, site.workdayStartUtc, site.autoCheckoutUtc]);
+  }, [site.id, site.name, site.latitude, site.longitude, site.radius, site.workdayStartUtc, site.workdayEndUtc, site.autoCheckoutUtc]);
 
   const parsedLat = Number(latitude);
   const parsedLng = Number(longitude);
@@ -158,7 +168,8 @@ export function AdminEditSiteForm({
           longitude: lng,
           radius: rad,
           workdayStartUtc: workdayStartUtc.trim(),
-          autoCheckoutUtc: autoCheckoutUtc.trim() || undefined,
+          workdayEndUtc: workdayEndUtc.trim() || undefined,
+          checkoutGraceMinutes: Number(checkoutGraceMinutes) || 20,
         }),
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
@@ -300,16 +311,29 @@ export function AdminEditSiteForm({
             variant="dark"
           />
           <UtcTimePicker
-            id={`edit-auto-checkout-${site.id}`}
-            label="Auto check-out after (NPT)"
-            value={autoCheckoutUtc}
-            onChange={setAutoCheckoutUtc}
+            id={`edit-work-end-${site.id}`}
+            label="Work end time (NPT)"
+            value={workdayEndUtc}
+            onChange={setWorkdayEndUtc}
             variant="dark"
           />
         </div>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-zinc-400">Checkout grace period (minutes)</span>
+          <input
+            type="number"
+            min={1}
+            max={120}
+            inputMode="numeric"
+            className="rounded-xl border border-white/10 bg-black/40 px-3 py-2"
+            value={checkoutGraceMinutes}
+            onChange={(e) => setCheckoutGraceMinutes(e.target.value)}
+          />
+        </label>
         <p className="text-xs text-zinc-500">
-          Use “No time” on work start to hide it on the Today page. Pick times in 12-hour AM/PM (Nepal NPT
-          wall time).
+          After <strong>Work end time</strong>, employees have this many minutes to manually check out
+          with a selfie. Their recorded checkout time is still capped at the work end time (grace period
+          does not count as working hours). Auto-checkout fires at the end of this grace window.
         </p>
         <Button type="submit" disabled={busy}>
           {busy ? "Saving…" : "Save changes"}
