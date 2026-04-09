@@ -4,7 +4,7 @@ import { DateTime, IANAZone } from "luxon";
  * Fallback IANA zone when none is stored or invalid. Prefer each user’s `users.timeZone`
  * (synced from the device), site `scheduleTimeZone`, or the browser zone on the client.
  */
-export const DEFAULT_ATTENDANCE_TIME_ZONE = "Asia/Kolkata";
+export const DEFAULT_ATTENDANCE_TIME_ZONE = "Asia/Kathmandu";
 
 /** Returns a valid IANA zone id, or {@link DEFAULT_ATTENDANCE_TIME_ZONE}. */
 export function normalizeTimeZoneId(raw: string | undefined | null): string {

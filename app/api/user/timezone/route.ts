@@ -12,7 +12,7 @@ const bodySchema = z.object({
 });
 
 /**
- * Sets the signed-in user’s work time zone (IANA id), e.g. `Asia/Kolkata` for India.
+ * Sets the signed-in user’s work time zone (IANA id), e.g. `Asia/Kathmandu` for Nepal.
  * Used to sync the browser/OS zone to Firestore (employees cannot patch `timeZone` from the client SDK).
  */
 export async function POST(req: Request) {

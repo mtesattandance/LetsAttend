@@ -109,9 +109,10 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
   const [workWindow, setWorkWindow] = React.useState<WorkWindow>(null);
   const workWindowRef = React.useRef<WorkWindow>(null);
   workWindowRef.current = workWindow;
-  const [workWindowTimes, setWorkWindowTimes] = React.useState<{ start12h: string | null; end12h: string | null }>({
+  const [workWindowTimes, setWorkWindowTimes] = React.useState<{ start12h: string | null; end12h: string | null; current12h?: string | null }>({
     start12h: null,
     end12h: null,
+    current12h: null,
   });
   const [busy, setBusy] = React.useState(false);
   const [done, setDone] = React.useState(false);
@@ -273,7 +274,7 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
     const evaluate = () => {
       if (!siteId) {
         setWorkWindow(null);
-        setWorkWindowTimes({ start12h: null, end12h: null });
+        setWorkWindowTimes({ start12h: null, end12h: null, current12h: null });
         return;
       }
       const site = sites.find((s) => s.id === siteId);
@@ -287,7 +288,8 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
           : null);
       const start12h = site?.workdayStartUtc ? wallHmTo12hScheduleZone(site.workdayStartUtc, zone) : null;
       const end12h = endHmForWindow ? wallHmTo12hScheduleZone(endHmForWindow, zone) : null;
-      setWorkWindowTimes({ start12h, end12h });
+      const current12h = DateTime.now().setZone(zone).toFormat("h:mm a");
+      setWorkWindowTimes({ start12h, end12h, current12h });
       setWorkWindow(
         computeWorkWindow({
           workdayStartUtc: site?.workdayStartUtc,
@@ -636,7 +638,8 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
                                 <strong className="font-semibold text-white">
                                   {workWindowTimes.end12h}
                                 </strong>
-                                . Regular check-in is not allowed after hours — submit an overtime request to
+                                {workWindowTimes.current12h ? ` (Current time: ${workWindowTimes.current12h}). ` : ". "}
+                                Regular check-in is not allowed after hours — submit an overtime request to
                                 record attendance.
                               </>
                             ) : (
@@ -653,7 +656,8 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
                             {workWindowTimes.start12h ? (
                               <>
                                 Regular check-in was only open from 15 minutes before through 15 minutes after{" "}
-                                <strong className="font-semibold text-white">{workWindowTimes.start12h}</strong>.
+                                <strong className="font-semibold text-white">{workWindowTimes.start12h}</strong>
+                                {workWindowTimes.current12h ? ` (Current time: ${workWindowTimes.current12h}). ` : ". "}
                                 Submit an overtime request or contact your admin.
                               </>
                             ) : (
@@ -676,7 +680,8 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
                                 <strong className="font-semibold text-white">
                                   {workWindowTimes.start12h}
                                 </strong>
-                                . Check-in opens 15 minutes before through 15 minutes after start, or submit an
+                                {workWindowTimes.current12h ? ` (Current time: ${workWindowTimes.current12h}). ` : ". "}
+                                Check-in opens 15 minutes before through 15 minutes after start, or submit an
                                 overtime request to begin earlier.
                               </>
                             ) : (
