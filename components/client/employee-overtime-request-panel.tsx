@@ -20,7 +20,8 @@ import { SiteSelectWithCustomRow } from "@/components/client/site-select-with-cu
 import { useDashboardUser } from "@/components/client/dashboard-user-context";
 import { calendarDateKeyInTimeZone } from "@/lib/date/calendar-day-key";
 import { normalizeTimeZoneId } from "@/lib/date/time-zone";
-import { formatInstantDateTime12hInZone } from "@/lib/time/format-wall-time";
+import { formatInstantDateTime12hInZone, formatInstantTime12hInZone } from "@/lib/time/format-wall-time";
+import { adIsoToBsIso, BS_MONTHS, type CalendarMode } from "@/lib/date/bs-calendar";
 import { toast } from "sonner";
 import { useCalendarMode } from "@/components/client/calendar-mode-context";
 import { formatIsoForCalendar } from "@/lib/date/bs-calendar";
@@ -55,9 +56,20 @@ function normalizeWorkDateKey(v: unknown, timeZone: string): string {
   return "";
 }
 
-function fmtTs(v: OvertimeStamp["time"], displayTimeZone: string) {
+function fmtTs(v: OvertimeStamp["time"], displayTimeZone: string, mode: CalendarMode) {
   const s = getFirestoreSeconds(v);
   if (s == null) return "—";
+  if (mode === "bs") {
+    const adIso = calendarDateKeyInTimeZone(new Date(s * 1000), displayTimeZone);
+    const bsIso = adIsoToBsIso(adIso);
+    const [y, mo, d] = bsIso.split("-").map(Number);
+    const monthName = BS_MONTHS[(mo ?? 1) - 1] ?? "Unknown";
+    const timePart = formatInstantTime12hInZone(s * 1000, displayTimeZone, {
+      withSeconds: true,
+      withTimeZoneName: true,
+    });
+    return `${monthName} ${d}, ${y} BS, ${timePart}`;
+  }
   return formatInstantDateTime12hInZone(s * 1000, displayTimeZone, {
     withSeconds: true,
     withTimeZoneName: true,
@@ -77,17 +89,19 @@ function AttendanceLine({
   gps,
   photoUrl,
   displayTimeZone,
+  mode,
 }: {
   kind: "Check-in" | "Check-out";
   ts: OvertimeStamp["time"];
   gps: OvertimeStamp["gps"];
   photoUrl?: string | null;
   displayTimeZone: string;
+  mode: CalendarMode;
 }) {
   return (
     <div className="text-xs leading-relaxed text-zinc-700 dark:text-zinc-300">
       <span className="text-zinc-500">{kind}: </span>
-      <span className="font-mono text-zinc-900 dark:text-zinc-200">{fmtTs(ts, displayTimeZone)}</span>
+      <span className="font-mono text-zinc-900 dark:text-zinc-200">{fmtTs(ts, displayTimeZone, mode)}</span>
       <span className="text-zinc-500"> · GPS {fmtGps(gps)}</span>
       {photoUrl ? (
         <>
@@ -162,6 +176,10 @@ export function EmployeeOvertimeRequestPanel() {
   );
 
   const submit = async () => {
+    if (!siteId.trim()) {
+      toast.message("Choose a work site for overtime.");
+      return;
+    }
     if (reason.trim().length < 3) {
       toast.message("Describe why you need overtime (at least a few words).");
       return;
@@ -173,14 +191,14 @@ export function EmployeeOvertimeRequestPanel() {
         method: "POST",
         headers: { ...h, "Content-Type": "application/json" },
         body: JSON.stringify({
-          siteId: siteId.trim() || undefined,
+          siteId: siteId.trim(),
           date: date.trim(),
           reason: reason.trim(),
         }),
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Request failed");
-      toast.success("Overtime request sent. Admins will review it.");
+      toast.success("Overtime request created. You can check in/out now, then admins will review.");
       setReason("");
       void loadMine();
     } catch (e) {
@@ -195,20 +213,17 @@ export function EmployeeOvertimeRequestPanel() {
       <CardHeader>
         <CardTitle>Overtime request</CardTitle>
         <CardDescription>
-          After your normal check-out, request overtime here. An admin must approve before extended
-          work is expected on site. When approved, use overtime check-in and check-out here with GPS
-          and a selfie — same rules as normal attendance. The work date you pick is the calendar day
-          you can check in and out (your device time zone).
+          Create overtime, then record overtime check-in and check-out with GPS + selfie on the same
+          work date. After you check out, this request stays in admin pending review for approval/rejection.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <SiteSelectWithCustomRow
-          label="Site (optional)"
+          label="Site"
           sites={sites}
           value={siteId}
           onChange={setSiteId}
           onRefreshSites={loadSites}
-          blankOptionLabel="None — admin will assign on approve"
         />
         <div className="flex flex-col gap-1.5">
           <span className={formFieldLabelClass}>Work date</span>
@@ -247,8 +262,7 @@ export function EmployeeOvertimeRequestPanel() {
               {requests.slice(0, 12).map((r) => {
                 const todayKey = calendarDateKeyInTimeZone(new Date(), displayTz);
                 const rowDate = normalizeWorkDateKey(r.date, displayTz);
-                const isApprovedForWorkDate =
-                  r.status === "approved" && rowDate !== "" && rowDate === todayKey;
+                const isWorkDateToday = rowDate !== "" && rowDate === todayKey;
                 const hasSite =
                   typeof r.siteId === "string" && r.siteId.trim().length > 0;
 
@@ -289,7 +303,7 @@ export function EmployeeOvertimeRequestPanel() {
                     </div>
                     {r.reason ? <p className="text-zinc-600 dark:text-zinc-400">{r.reason}</p> : null}
 
-                    {r.status === "approved" ? (
+                    {r.status !== "rejected" ? (
                       <div className="space-y-4 rounded-xl border border-violet-500/20 bg-violet-500/[0.04] p-4">
                         <p className="text-xs font-medium uppercase tracking-wide text-violet-900 dark:text-violet-200/90">
                           Overtime attendance
@@ -299,10 +313,11 @@ export function EmployeeOvertimeRequestPanel() {
                         {!hasIn ? (
                           <div className="space-y-2">
                             <p className="text-xs text-zinc-500">
-                              Step 1 — Check in at the approved site (GPS + selfie).
+                              Step 1 — Check in at the selected site (GPS + selfie).
                             </p>
-                            {isApprovedForWorkDate && hasSite ? (
+                            {isWorkDateToday && hasSite ? (
                               <OvertimeAttendanceCapture
+                                key={`${r.id}-overtime-in`}
                                 requestId={r.id}
                                 mode="check-in"
                                 siteLabel={siteLabel(r.siteId)}
@@ -310,8 +325,7 @@ export function EmployeeOvertimeRequestPanel() {
                               />
                             ) : !hasSite ? (
                               <p className="text-xs text-amber-200/90">
-                                This approval is missing a work site. Ask an admin to approve with a site
-                                before you can check in.
+                                This request has no work site. Create a new overtime request with site selected.
                               </p>
                             ) : (
                               <p className="text-xs text-amber-200/80">
@@ -331,6 +345,7 @@ export function EmployeeOvertimeRequestPanel() {
                             gps={r.overtimeCheckIn?.gps}
                             photoUrl={r.overtimeCheckIn?.photoUrl}
                             displayTimeZone={displayTz}
+                            mode={mode}
                           />
                         ) : null}
 
@@ -340,8 +355,9 @@ export function EmployeeOvertimeRequestPanel() {
                             <p className="text-xs text-zinc-500">
                               Step 2 — When you finish overtime work, check out (GPS + selfie at the site).
                             </p>
-                            {isApprovedForWorkDate && hasSite ? (
+                            {isWorkDateToday && hasSite ? (
                               <OvertimeAttendanceCapture
+                                key={`${r.id}-overtime-out`}
                                 requestId={r.id}
                                 mode="check-out"
                                 siteLabel={siteLabel(r.siteId)}
@@ -368,12 +384,13 @@ export function EmployeeOvertimeRequestPanel() {
                             gps={r.overtimeCheckOut?.gps}
                             photoUrl={r.overtimeCheckOut?.photoUrl}
                             displayTimeZone={displayTz}
+                            mode={mode}
                           />
                         ) : null}
 
                         {hasIn && hasOut ? (
                           <p className="border-t border-zinc-200/80 pt-3 text-sm font-medium text-emerald-800 dark:border-white/10 dark:text-emerald-400/95">
-                            Overtime session complete.
+                            Overtime session complete. Waiting for admin review.
                           </p>
                         ) : null}
                       </div>

@@ -27,8 +27,8 @@ export function SiteCreateFormInner({
   const [latitude, setLatitude] = React.useState("");
   const [longitude, setLongitude] = React.useState("");
   const [radius, setRadius] = React.useState("80");
-  const [workdayStartUtc, setWorkdayStartUtc] = React.useState("09:00");
-  const [workdayEndUtc, setWorkdayEndUtc] = React.useState("17:00");
+  const [workdayStartUtc, setWorkdayStartUtc] = React.useState("");
+  const [workdayEndUtc, setWorkdayEndUtc] = React.useState("");
   const [msg, setMsg] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [placeQuery, setPlaceQuery] = React.useState("");
@@ -121,11 +121,20 @@ export function SiteCreateFormInner({
       const u = auth.currentUser;
       if (!u) throw new Error("Not signed in");
       const token = await u.getIdToken();
+      if (!name.trim()) {
+        throw new Error("Please enter a site name.");
+      }
       const lat = Number(latitude);
       const lng = Number(longitude);
       const rad = Number(radius);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        throw new Error("Pick a location pin on the map.");
+        throw new Error("Please pick a location on the map before saving.");
+      }
+      if (!Number.isFinite(rad) || rad <= 0) {
+        throw new Error("Please enter a valid radius in meters (e.g. 50–200).");
+      }
+      if (rad > 5000) {
+        throw new Error("Radius cannot exceed 5000 meters.");
       }
       const res = await fetch(submitPath, {
         method: "POST",
@@ -146,8 +155,8 @@ export function SiteCreateFormInner({
       if (!res.ok) throw new Error(data.error ?? "Failed");
       setMsg(`Site created: ${data.id}`);
       setName("");
-      setWorkdayStartUtc("09:00");
-      setWorkdayEndUtc("17:00");
+      setWorkdayStartUtc("");
+      setWorkdayEndUtc("");
       setPlaceQuery("");
       setGeoResults([]);
       if (data.id) onCreated?.(data.id);
@@ -303,7 +312,7 @@ export function SiteCreateFormInner({
         <div className="grid gap-4 sm:grid-cols-2">
           <UtcTimePicker
             id="create-work-start"
-            label="Expected work start (NPT)"
+            label="Expected work start (site local time)"
             value={workdayStartUtc}
             onChange={setWorkdayStartUtc}
             allowEmpty
@@ -311,9 +320,10 @@ export function SiteCreateFormInner({
           />
           <UtcTimePicker
             id="create-work-end"
-            label="Work end time (NPT)"
+            label="Work end time (site local time)"
             value={workdayEndUtc}
             onChange={setWorkdayEndUtc}
+            allowEmpty
             variant={light ? "light" : "dark"}
           />
         </div>

@@ -6,7 +6,7 @@ import { jsonError } from "@/lib/api/json-error";
 import { isRequestAdmin } from "@/lib/auth/require-admin";
 import { isSuperAdminDecoded, isSuperAdminUserRow } from "@/lib/auth/super-admin";
 import { calendarDateKeyInTimeZone } from "@/lib/date/calendar-day-key";
-import { DEFAULT_ATTENDANCE_TIME_ZONE } from "@/lib/date/time-zone";
+import { timeZoneFromUserSnapshot } from "@/lib/attendance/time-zone-from-snap";
 
 export const runtime = "nodejs";
 
@@ -93,7 +93,8 @@ export async function GET(req: Request) {
     .map((d) => userById.get(d.id)!)
     .filter(Boolean);
 
-  const day = calendarDateKeyInTimeZone(new Date(), DEFAULT_ATTENDANCE_TIME_ZONE);
+  const viewerTz = timeZoneFromUserSnapshot(await db.collection("users").doc(decoded.uid).get());
+  const day = calendarDateKeyInTimeZone(new Date(), viewerTz);
   const attTodaySnap = await db.collection("attendance").where("date", "==", day).get();
 
   const activeAtSite: {

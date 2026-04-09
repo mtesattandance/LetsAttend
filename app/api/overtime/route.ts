@@ -12,7 +12,7 @@ export const runtime = "nodejs";
 const dateRe = /^\d{4}-\d{2}-\d{2}$/;
 
 const postSchema = z.object({
-  siteId: z.string().min(1).optional(),
+  siteId: z.string().min(1),
   date: z.string().regex(dateRe, "Use calendar date YYYY-MM-DD"),
   reason: z.string().min(3).max(2000),
 });
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     workerId: uid,
     workerEmail: email ?? null,
     workerName: typeof name === "string" ? name : null,
-    siteId: parsed.data.siteId ?? null,
+    siteId: parsed.data.siteId.trim(),
     date: parsed.data.date,
     reason: parsed.data.reason.trim(),
     status: "pending",

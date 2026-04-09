@@ -101,6 +101,11 @@ export function SettingsPage() {
                       {user.name}
                     </p>
                     <p className="truncate text-sm text-zinc-600 dark:text-zinc-400">{user.email}</p>
+                    {user.employeeId ? (
+                      <p className="font-mono text-xs text-zinc-600 dark:text-zinc-400">
+                        ID: <span className="font-semibold text-zinc-800 dark:text-zinc-200">{user.employeeId}</span>
+                      </p>
+                    ) : null}
                     <p className="flex flex-wrap items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
                       <span>Role:</span>
                       <span className={roleBadgeClassNames(user.role)}>

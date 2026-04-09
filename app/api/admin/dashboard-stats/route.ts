@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { DateTime } from "luxon";
 import { calendarDateKeyInTimeZone } from "@/lib/date/calendar-day-key";
-import { DEFAULT_ATTENDANCE_TIME_ZONE } from "@/lib/date/time-zone";
+import { timeZoneFromUserSnapshot } from "@/lib/attendance/time-zone-from-snap";
 import { jsonError } from "@/lib/api/json-error";
 import { isRequestAdmin } from "@/lib/auth/require-admin";
 import { requireBearerUser } from "@/lib/auth/verify-request";
@@ -21,7 +21,8 @@ export async function GET(req: Request) {
   if (!(await isRequestAdmin(decoded))) return jsonError("Forbidden", 403);
 
   const db = adminDb();
-  const day = calendarDateKeyInTimeZone(new Date(), DEFAULT_ATTENDANCE_TIME_ZONE);
+  const viewerTz = timeZoneFromUserSnapshot(await db.collection("users").doc(decoded.uid).get());
+  const day = calendarDateKeyInTimeZone(new Date(), viewerTz);
   const now = new Date().getTime();
 
   const [attendanceSnap, liveSnap] = await Promise.all([
@@ -47,7 +48,7 @@ export async function GET(req: Request) {
           ? t.seconds * 1000
           : null;
     if (ms == null) return false;
-    const local = DateTime.fromMillis(ms, { zone: "utc" }).setZone(DEFAULT_ATTENDANCE_TIME_ZONE);
+    const local = DateTime.fromMillis(ms, { zone: "utc" }).setZone(viewerTz);
     return local.hour > 9 || (local.hour === 9 && local.minute >= 0);
   }).length;
 

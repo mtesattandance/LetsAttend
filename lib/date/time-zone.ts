@@ -1,7 +1,10 @@
 import { DateTime, IANAZone } from "luxon";
 
-/** Default for Nepal (NPT = UTC+5:45). Override per user via Firestore `users.timeZone` (IANA id). */
-export const DEFAULT_ATTENDANCE_TIME_ZONE = "Asia/Kathmandu";
+/**
+ * Fallback IANA zone when none is stored or invalid. Prefer each user’s `users.timeZone`
+ * (synced from the device), site `scheduleTimeZone`, or the browser zone on the client.
+ */
+export const DEFAULT_ATTENDANCE_TIME_ZONE = "Asia/Kolkata";
 
 /** Returns a valid IANA zone id, or {@link DEFAULT_ATTENDANCE_TIME_ZONE}. */
 export function normalizeTimeZoneId(raw: string | undefined | null): string {
@@ -12,7 +15,7 @@ export function normalizeTimeZoneId(raw: string | undefined | null): string {
 }
 
 /**
- * Client-only: browser/OS time zone (e.g. `Asia/Kolkata` in India, `Asia/Kathmandu` in Nepal).
+ * Client-only: browser/OS time zone (IANA id).
  * Used to seed and sync `users.timeZone`.
  */
 export function getBrowserTimeZone(): string {
@@ -25,10 +28,8 @@ export function getBrowserTimeZone(): string {
   }
 }
 
-/** Short label for common South Asian zones; otherwise a localized abbreviation (e.g. GMT+5:30). */
+/** Short UI label for a zone (offset / abbreviation), no country-specific branding. */
 export function workTimeZoneUiLabel(tz: string): string {
   const z = normalizeTimeZoneId(tz);
-  if (z === "Asia/Kathmandu") return "NPT";
-  if (z === "Asia/Kolkata") return "IST";
   return DateTime.now().setZone(z).toFormat("ZZZZ");
 }

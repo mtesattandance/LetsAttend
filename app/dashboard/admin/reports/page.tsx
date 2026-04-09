@@ -16,6 +16,7 @@ import { getFirebaseAuth } from "@/lib/firebase/client";
 import { Button } from "@/components/ui/button";
 import { useCalendarMode } from "@/components/client/calendar-mode-context";
 import { monthLabelForModeYm, formatIsoForCalendar, bsIsoToAdIso, adIsoToBsIso, currentMonthYyyyMmForMode, convertMonthMode } from "@/lib/date/bs-calendar";
+import { DEFAULT_ATTENDANCE_TIME_ZONE } from "@/lib/date/time-zone";
 import { toast } from "sonner";
 import { FileArchive, Loader2, Sparkles, User, Users, CalendarDays, CalendarRange, ChevronRight, Activity, ArrowDownToLine, Zap, MapPin, Building2, Table2 } from "lucide-react";
 
@@ -57,6 +58,7 @@ type HoursPayload = {
     outTime: string;
     dutyHours: number;
     workPlace: string;
+    schedule: string;
     remark: string;
   }[];
   worker: { id: string; employeeId: string | null; name: string | null; designation: string | null };
@@ -88,17 +90,17 @@ export default function AdminReportsPage() {
   
   // Initialize calendar correct default year
   const [periodYear, setPeriodYear] = React.useState(() => {
-    const current = currentMonthYyyyMmForMode("ad", "Asia/Kathmandu");
+    const current = currentMonthYyyyMmForMode("ad", DEFAULT_ATTENDANCE_TIME_ZONE);
     return Number(current.split("-")[0]) || DateTime.now().year;
   });
   
   const [periodSingleMonth, setPeriodSingleMonth] = React.useState(() =>
-    currentMonthYyyyMmForMode("ad", "Asia/Kathmandu")
+    currentMonthYyyyMmForMode("ad", DEFAULT_ATTENDANCE_TIME_ZONE)
   );
   const [periodStartMonth, setPeriodStartMonth] = React.useState(() =>
-    currentMonthYyyyMmForMode("ad", "Asia/Kathmandu")
+    currentMonthYyyyMmForMode("ad", DEFAULT_ATTENDANCE_TIME_ZONE)
   );
-  const [periodEndMonth, setPeriodEndMonth] = React.useState(() => currentMonthYyyyMmForMode("ad", "Asia/Kathmandu"));
+  const [periodEndMonth, setPeriodEndMonth] = React.useState(() => currentMonthYyyyMmForMode("ad", DEFAULT_ATTENDANCE_TIME_ZONE));
   
   const [downloading, setDownloading] = React.useState(false);
   const [downloadStatus, setDownloadStatus] = React.useState("Ready to generate");
@@ -106,20 +108,24 @@ export default function AdminReportsPage() {
   const [downloadDoneCount, setDownloadDoneCount] = React.useState(0);
   const [downloadTotalCount, setDownloadTotalCount] = React.useState(0);
 
+  // ── Employee preview state ──────────────────────────────────────────────
+  const [previewData, setPreviewData] = React.useState<HoursPayload | null>(null);
+  const [previewLoading, setPreviewLoading] = React.useState(false);
+
   // ── Site reports state ───────────────────────────────────────────────────
   const [sites, setSites] = React.useState<SiteRow[]>([]);
   const [sitesLoading, setSitesLoading] = React.useState(false);
   const [selectedSiteId, setSelectedSiteId] = React.useState("");
   const [sitePeriodMode, setSitePeriodMode] = React.useState<"day" | "month" | "year">("month");
   const [sitePeriodValue, setSitePeriodValue] = React.useState(() =>
-    currentMonthYyyyMmForMode("ad", "Asia/Kathmandu")
+    currentMonthYyyyMmForMode("ad", DEFAULT_ATTENDANCE_TIME_ZONE)
   );
   const [sitePeriodYear, setSitePeriodYear] = React.useState(() => {
-    const current = currentMonthYyyyMmForMode("ad", "Asia/Kathmandu");
+    const current = currentMonthYyyyMmForMode("ad", DEFAULT_ATTENDANCE_TIME_ZONE);
     return Number(current.split("-")[0]) || DateTime.now().year;
   });
   const [sitePeriodDay, setSitePeriodDay] = React.useState(() =>
-    DateTime.now().setZone("Asia/Kathmandu").toISODate() ?? ""
+    DateTime.now().setZone(DEFAULT_ATTENDANCE_TIME_ZONE).toISODate() ?? ""
   );
   const [siteData, setSiteData] = React.useState<SiteAttendanceResponse | null>(null);
   const [siteLoading, setSiteLoading] = React.useState(false);
@@ -193,11 +199,11 @@ export default function AdminReportsPage() {
   const prevModeRef = React.useRef(mode);
   React.useEffect(() => {
     if (!mounted) {
-       setPeriodSingleMonth(currentMonthYyyyMmForMode(mode, "Asia/Kathmandu"));
-       setPeriodStartMonth(currentMonthYyyyMmForMode(mode, "Asia/Kathmandu"));
-       setPeriodEndMonth(currentMonthYyyyMmForMode(mode, "Asia/Kathmandu"));
+       setPeriodSingleMonth(currentMonthYyyyMmForMode(mode, DEFAULT_ATTENDANCE_TIME_ZONE));
+       setPeriodStartMonth(currentMonthYyyyMmForMode(mode, DEFAULT_ATTENDANCE_TIME_ZONE));
+       setPeriodEndMonth(currentMonthYyyyMmForMode(mode, DEFAULT_ATTENDANCE_TIME_ZONE));
        
-       const currentParts = currentMonthYyyyMmForMode(mode, "Asia/Kathmandu").split("-");
+       const currentParts = currentMonthYyyyMmForMode(mode, DEFAULT_ATTENDANCE_TIME_ZONE).split("-");
        if (currentParts[0]) setPeriodYear(Number(currentParts[0]));
        
        prevModeRef.current = mode;
@@ -293,7 +299,19 @@ export default function AdminReportsPage() {
         const startY = drawHeader(monthLabel);
         autoTable(doc, {
           startY,
-          head: [["Date", "Day", "Type", "In Time", "Out Time", "Duty Hours", "Work Place", "Remark"]],
+          head: [
+            [
+              "Date",
+              "Day",
+              "Type",
+              "In Time",
+              "Out Time",
+              "Duty Hours",
+              "Work Place",
+              "Schedule",
+              "Remark",
+            ],
+          ],
           body: p.entries.map((r) => [
             mode === "bs" ? formatIsoForCalendar(r.day, "bs", p.zone) : r.day,
             DateTime.fromISO(r.day, { zone: p.zone }).toFormat("ccc"),
@@ -302,6 +320,7 @@ export default function AdminReportsPage() {
             r.outTime,
             r.dutyHours.toFixed(2),
             r.workPlace,
+            r.schedule || "—",
             r.remark || "-",
           ]),
           foot: [[
@@ -312,6 +331,7 @@ export default function AdminReportsPage() {
             "",
             p.totalHours.toFixed(2),
             `On-site ${p.onSiteSessionHours.toFixed(2)} | OT ${p.approvedClockOvertimeHours.toFixed(2)} | Off-site ${p.approvedOffsiteHours.toFixed(2)}`,
+            "",
             "",
           ]],
           styles: { fontSize: 8, cellPadding: 4.2 },
@@ -324,6 +344,32 @@ export default function AdminReportsPage() {
     },
     [fetchLogoDataUrl, mode]
   );
+
+  const fetchPreview = React.useCallback(async () => {
+    if (!selectedWorkerId) {
+      toast.error("Select a specific employee to preview");
+      return;
+    }
+    setPreviewLoading(true);
+    setPreviewData(null);
+    try {
+      const auth = getFirebaseAuth();
+      const u = auth.currentUser;
+      if (!u) throw new Error("Not signed in");
+      const token = await u.getIdToken();
+      const q = new URLSearchParams({ month: periodSingleMonth, workerId: selectedWorkerId });
+      const res = await fetch(`/api/attendance/working-hours?${q.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = (await res.json()) as HoursPayload & { error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to load preview");
+      setPreviewData(json);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to load preview");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [selectedWorkerId, periodSingleMonth]);
 
   const startDownload = React.useCallback(async () => {
     if (targetType === "individual" && !selectedWorkerId) {
@@ -882,22 +928,35 @@ export default function AdminReportsPage() {
                   </p>
                 </div>
               </div>
-              <Button
-                size="lg"
-                onClick={startDownload}
-                disabled={loading || users.length === 0}
-                className="w-full sm:w-auto rounded-xl bg-gradient-to-r from-zinc-900 to-zinc-800 border-t border-white/10 font-bold text-white shadow-xl shadow-zinc-500/20 hover:from-zinc-800 hover:to-zinc-700 dark:from-white dark:to-zinc-200 dark:text-zinc-900 dark:shadow-cyan-500/10 dark:hover:from-zinc-200 dark:hover:to-zinc-300 gap-2 h-12 transition-all hover:scale-[1.02] active:scale-95"
-              >
-                {targetType === "all" ? (
-                  <>
-                    <FileArchive className="size-4" /> Download All Reports
-                  </>
-                ) : (
-                  <>
-                    <ArrowDownToLine className="size-4" /> Download Report
-                  </>
+              <div className="flex w-full gap-3 sm:w-auto">
+                {periodMode === "month" && targetType === "individual" && (
+                  <Button
+                    size="lg"
+                    onClick={() => void fetchPreview()}
+                    disabled={previewLoading || !selectedWorkerId}
+                    className="flex-1 sm:flex-none rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-lg shadow-emerald-500/20 hover:from-emerald-500 hover:to-teal-500 gap-2 h-12 transition-all hover:scale-[1.02] active:scale-95"
+                  >
+                    {previewLoading ? <Loader2 className="size-4 animate-spin" /> : <Activity className="size-4" />}
+                    Preview
+                  </Button>
                 )}
-              </Button>
+                <Button
+                  size="lg"
+                  onClick={startDownload}
+                  disabled={loading || users.length === 0}
+                  className="flex-1 sm:flex-none rounded-xl bg-gradient-to-r from-zinc-900 to-zinc-800 border-t border-white/10 font-bold text-white shadow-xl shadow-zinc-500/20 hover:from-zinc-800 hover:to-zinc-700 dark:from-white dark:to-zinc-200 dark:text-zinc-900 dark:shadow-cyan-500/10 dark:hover:from-zinc-200 dark:hover:to-zinc-300 gap-2 h-12 transition-all hover:scale-[1.02] active:scale-95"
+                >
+                  {targetType === "all" ? (
+                    <>
+                      <FileArchive className="size-4" /> Download All Reports
+                    </>
+                  ) : (
+                    <>
+                      <ArrowDownToLine className="size-4" /> Download Report
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="p-6">
@@ -950,6 +1009,80 @@ export default function AdminReportsPage() {
             </div>
           )}
         </div>
+
+        {/* Employee monthly preview table */}
+        {previewData && periodMode === "month" && targetType === "individual" && (
+          <Card className="overflow-hidden border-zinc-200 bg-white/80 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/80 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <CardHeader className="bg-zinc-50/50 dark:bg-white/5 border-b border-zinc-100 dark:border-white/10 pb-4">
+              <CardTitle className="text-sm font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 flex items-center gap-2">
+                <User className="size-4" />
+                {previewData.worker.name ?? "Employee"} — {(() => { const p = periodSingleMonth.split("-").map(Number); return monthLabelForModeYm(p[0]!, p[1]!, mode); })()} — Monthly Preview
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-100 bg-zinc-50/80 dark:border-white/5 dark:bg-white/[0.03]">
+                      <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-zinc-500">Day</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-zinc-500">Kind</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-zinc-500">In</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-zinc-500">Out</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-zinc-500">Hours</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-zinc-500">Workplace</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-zinc-500">Schedule</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-zinc-500">Remark</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewData.entries.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="px-4 py-8 text-center text-sm text-zinc-400 italic">No attendance entries for this month.</td>
+                      </tr>
+                    ) : (
+                      previewData.entries.map((e, i) => (
+                        <tr
+                          key={e.id}
+                          className={`border-b border-zinc-100/60 dark:border-white/5 transition-colors hover:bg-zinc-50 dark:hover:bg-white/[0.02] ${i % 2 === 0 ? "" : "bg-zinc-50/40 dark:bg-white/[0.015]"}`}
+                        >
+                          <td className="px-4 py-2.5 font-mono text-xs text-zinc-700 dark:text-zinc-300 whitespace-nowrap">
+                            {mode === "bs" ? formatIsoForCalendar(e.day, "bs") : e.day}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              e.kind === "on_site"
+                                ? "bg-cyan-100 text-cyan-800 dark:bg-cyan-500/20 dark:text-cyan-300"
+                                : e.kind === "overtime"
+                                  ? "bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-300"
+                                  : "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300"
+                            }`}>
+                              {kindLabel(e.kind)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-zinc-600 dark:text-zinc-400 whitespace-nowrap">{e.inTime}</td>
+                          <td className="px-4 py-2.5 text-xs text-zinc-600 dark:text-zinc-400 whitespace-nowrap">{e.outTime}</td>
+                          <td className="px-4 py-2.5 text-xs font-semibold text-zinc-700 dark:text-zinc-300">{e.dutyHours.toFixed(2)}</td>
+                          <td className="px-4 py-2.5 text-xs text-zinc-600 dark:text-zinc-400">{e.workPlace}</td>
+                          <td className="px-4 py-2.5 text-xs text-zinc-600 dark:text-zinc-400">{e.schedule}</td>
+                          <td className="px-4 py-2.5 text-xs text-zinc-500 dark:text-zinc-500">{e.remark}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-zinc-100/60 dark:bg-white/5">
+                      <td colSpan={4} className="px-4 py-3 text-xs font-bold text-zinc-700 dark:text-zinc-300">Total</td>
+                      <td className="px-4 py-3 text-xs font-bold text-emerald-700 dark:text-emerald-400">{previewData.totalHours.toFixed(2)} hrs</td>
+                      <td colSpan={3} className="px-4 py-3 text-xs text-zinc-500">
+                        On-site: {previewData.onSiteSessionHours.toFixed(2)} · Overtime: {previewData.approvedClockOvertimeHours.toFixed(2)} · Off-site: {previewData.approvedOffsiteHours.toFixed(2)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
         </>) /* end employee tab */}
 
         {/* ════════════════════════════════════════════════ SITE TAB ══ */}

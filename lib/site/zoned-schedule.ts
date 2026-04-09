@@ -11,7 +11,7 @@ export function parseWallClockHm(s: string): { h: number; m: number } | null {
 
 /**
  * UTC instant for `dayKey` (`YYYY-MM-DD`) at local `hh:mm` on that **calendar day**
- * in `timeZone` (e.g. Nepal uses `Asia/Kathmandu` so 23:59 NPT is correct, not UTC).
+ * in `timeZone` (wall clock in that zone, not UTC).
  */
 export function zonedWallClockToUtcMillis(
   dayKey: string,

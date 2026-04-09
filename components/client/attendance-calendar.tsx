@@ -103,7 +103,7 @@ export type AttendanceCalendarProps = {
 export function AttendanceCalendar({
   workerId: workerIdProp,
   title = "Attendance",
-  description = "Month view in your work time zone (from your device, e.g. IST or NPT) — ✓ checked in; ✕ past day with no record.",
+  description = "Month view in your work time zone (from your device) — ✓ checked in; ✕ past day with no record.",
   adminDayDetailBasePath = "/dashboard/admin/workers",
 }: AttendanceCalendarProps) {
   const router = useRouter();

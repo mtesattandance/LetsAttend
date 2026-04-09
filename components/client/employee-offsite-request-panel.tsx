@@ -155,7 +155,7 @@ export function EmployeeOffsiteRequestPanel() {
       <CardHeader>
         <CardTitle>Off-site work</CardTitle>
         <CardDescription>
-          Pick an admin contact, your planned window (NPT), and reason. When you submit, we capture your
+          Pick an admin contact, your planned window (local time), and reason. When you submit, we capture your
           current GPS automatically (no extra tap). Any admin can approve and adjust times.
         </CardDescription>
       </CardHeader>
@@ -195,14 +195,14 @@ export function EmployeeOffsiteRequestPanel() {
         <div className="grid gap-4 sm:grid-cols-2">
           <UtcTimePicker
             id="offsite-start"
-            label="Planned start (NPT)"
+            label="Planned start (local)"
             value={workStartHm}
             onChange={setWorkStartHm}
             variant="light"
           />
           <UtcTimePicker
             id="offsite-end"
-            label="Planned end (NPT)"
+            label="Planned end (local)"
             value={workEndHm}
             onChange={setWorkEndHm}
             variant="light"
@@ -257,7 +257,7 @@ export function EmployeeOffsiteRequestPanel() {
                     <span className="font-mono text-cyan-800 dark:text-cyan-200/90">
                       {formatWallHm12h(dispStart)} → {formatWallHm12h(dispEnd)}
                     </span>{" "}
-                    (NPT)
+                    (local)
                   </p>
                   <div className="mt-2 space-y-1 border-t border-zinc-200/80 pt-2 dark:border-white/5">
                     <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-500">

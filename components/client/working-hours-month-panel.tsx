@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getFirebaseAuth } from "@/lib/firebase/client";
-import { DEFAULT_ATTENDANCE_TIME_ZONE } from "@/lib/date/time-zone";
+import { getBrowserTimeZone, normalizeTimeZoneId } from "@/lib/date/time-zone";
 import { MONTHLY_REGULAR_CAP_HOURS } from "@/lib/attendance/month-hours-cap";
 import { WorkingHoursMonthPickerCard } from "@/components/client/working-hours-month-picker-card";
 import { toast } from "sonner";
@@ -45,6 +45,7 @@ type Payload = {
     outTime: string;
     dutyHours: number;
     workPlace: string;
+    schedule: string;
     remark: string;
   }[];
   worker: { id: string; employeeId: string | null; name: string | null; designation: string | null };
@@ -74,13 +75,20 @@ export function WorkingHoursMonthPanel({
   /** When set, loads that user (admin only). When omitted, loads the signed-in user. */
   workerId?: string;
 }) {
-  const zone = DEFAULT_ATTENDANCE_TIME_ZONE;
   const { mode } = useCalendarMode();
   const { user: viewer } = useDashboardUser();
   const canEdit = viewer?.role === "admin" || viewer?.role === "super_admin";
 
-  const [month, setMonth] = React.useState(() => currentMonthYyyyMmForMode(mode, zone));
   const [data, setData] = React.useState<Payload | null>(null);
+  const zone = React.useMemo(() => {
+    if (data?.zone) return data.zone;
+    if (!workerId) return normalizeTimeZoneId(viewer?.timeZone) ?? getBrowserTimeZone();
+    return getBrowserTimeZone();
+  }, [data?.zone, workerId, viewer?.timeZone]);
+
+  const [month, setMonth] = React.useState(() =>
+    currentMonthYyyyMmForMode(mode, getBrowserTimeZone())
+  );
   const [loading, setLoading] = React.useState(false);
   const [edits, setEdits] = React.useState<
     Record<string, { inTime: string; outTime: string; dutyHours: string; workPlace: string; remark: string }>
@@ -284,19 +292,33 @@ export function WorkingHoursMonthPanel({
           ? monthLabelForModeYm(pMonthParts[0]!, pMonthParts[1]!, mode)
           : p.month;
       const startY = drawHeader(monthLabel);
-      const tableRows: Array<[string, string, string, string, string, string, string, string]> = p.entries.map((r) => [
-            mode === "bs" ? formatIsoForCalendar(r.day, "bs", p.zone) : r.day,
-        DateTime.fromISO(r.day, { zone: p.zone }).toFormat("ccc"),
-        kindLabel(r.kind),
-        r.inTime,
-        r.outTime,
-        r.dutyHours.toFixed(2),
-        r.workPlace,
-        r.remark || "-",
-      ]);
+      const tableRows: Array<[string, string, string, string, string, string, string, string, string]> =
+        p.entries.map((r) => [
+          mode === "bs" ? formatIsoForCalendar(r.day, "bs", p.zone) : r.day,
+          DateTime.fromISO(r.day, { zone: p.zone }).toFormat("ccc"),
+          kindLabel(r.kind),
+          r.inTime,
+          r.outTime,
+          r.dutyHours.toFixed(2),
+          r.workPlace,
+          r.schedule || "—",
+          r.remark || "-",
+        ]);
       autoTable(doc, {
         startY,
-        head: [["Date", "Day", "Type", "In Time", "Out Time", "Duty Hours", "Work Place", "Remark"]],
+        head: [
+          [
+            "Date",
+            "Day",
+            "Type",
+            "In Time",
+            "Out Time",
+            "Duty Hours",
+            "Work Place",
+            "Schedule",
+            "Remark",
+          ],
+        ],
         body: tableRows,
         foot: [[
           "",
@@ -306,6 +328,7 @@ export function WorkingHoursMonthPanel({
           "",
           p.totalHours.toFixed(2),
           `On-site ${p.onSiteSessionHours.toFixed(2)} | OT ${p.approvedClockOvertimeHours.toFixed(2)} | Off-site ${p.approvedOffsiteHours.toFixed(2)}`,
+          "",
           "",
         ]],
         styles: { fontSize: 8, cellPadding: 4.2 },
@@ -643,7 +666,7 @@ export function WorkingHoursMonthPanel({
                   {downloading ? "Preparing PDF..." : "Download PDF"}
                 </Button>
               </div>
-              <table className="w-full min-w-[820px] border-collapse text-sm">
+              <table className="w-full min-w-[940px] border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-zinc-200 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:border-white/10 dark:text-zinc-400">
                     <th className="py-2 pr-3">Date</th>
@@ -653,6 +676,7 @@ export function WorkingHoursMonthPanel({
                     <th className="py-2 pr-3">Out Time</th>
                     <th className="py-2 pr-3">Duty Hours</th>
                     <th className="py-2 pr-3">Work Place</th>
+                    <th className="py-2 pr-3">Schedule</th>
                     <th className="py-2">Remark</th>
                   </tr>
                 </thead>
@@ -780,6 +804,7 @@ export function WorkingHoursMonthPanel({
                             r.workPlace
                           )}
                         </td>
+                        <td className="py-1.5 pr-3 text-xs text-zinc-500 dark:text-zinc-400">{r.schedule}</td>
                         <td className="py-1.5">
                           {canEdit ? (
                             <input
@@ -809,7 +834,7 @@ export function WorkingHoursMonthPanel({
                   <tr className="border-t-2 border-zinc-300 bg-zinc-100/80 font-medium dark:border-white/20 dark:bg-white/6">
                     <td className="py-2 pr-3 text-zinc-800 dark:text-zinc-200" colSpan={5}>Month total (edited)</td>
                     <td className="py-2 pr-3 tabular-nums">{fmtHr(totalsFromRows.total)}</td>
-                    <td className="py-2 pr-3 tabular-nums text-xs text-zinc-600 dark:text-zinc-300">
+                    <td className="py-2 pr-3 tabular-nums text-xs text-zinc-600 dark:text-zinc-300" colSpan={2}>
                       On-site {fmtHr(totalsFromRows.onSite)} | OT {fmtHr(totalsFromRows.overtime)} | Off-site {fmtHr(totalsFromRows.offSite)}
                     </td>
                     <td className="py-2 tabular-nums">Cap+OT {fmtHr(Math.max(0, totalsFromRows.total - MONTHLY_REGULAR_CAP_HOURS))}</td>

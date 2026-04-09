@@ -1,9 +1,16 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { DateTime } from "luxon";
-import { DEFAULT_ATTENDANCE_TIME_ZONE } from "@/lib/date/time-zone";
+import { timeZoneFromUserSnapshot } from "@/lib/attendance/time-zone-from-snap";
 import { MONTHLY_REGULAR_CAP_HOURS } from "@/lib/attendance/month-hours-cap";
 import { buildWorkerDayDetail, type WorkerDayDetailResult } from "./worker-day-detail";
 import { type CalendarMode, bsMonthDays, bsIsoToAdIso } from "@/lib/date/bs-calendar";
+import { from24hUtc } from "@/lib/time/utc-12h";
+
+function hm24to12(hm: string): string {
+  if (!hm || !/^\d{1,2}:\d{2}$/.test(hm.trim())) return hm;
+  const { h12, m, ap } = from24hUtc(hm.trim());
+  return `${h12}:${String(m).padStart(2, "0")} ${ap}`;
+}
 
 export { MONTHLY_REGULAR_CAP_HOURS };
 
@@ -23,6 +30,8 @@ export type DayEntryRow = {
   outTime: string;
   dutyHours: number;
   workPlace: string;
+  /** Site shift window for on-site rows (e.g. 9:00 AM – 5:00 PM); "—" when not applicable. */
+  schedule: string;
   remark: string;
 };
 
@@ -92,7 +101,7 @@ function buildDayEntryRows(day: string, zone: string, data: WorkerDayDetailResul
     if (segments.length > 0) {
       for (let i = 0; i < segments.length; i++) {
         const s = segments[i]!;
-        const ms = s.durationMs ?? 0;
+        const ms = s.durationMs;
         rows.push({
           id: `${day}-on-${i}`,
           day,
@@ -101,6 +110,7 @@ function buildDayEntryRows(day: string, zone: string, data: WorkerDayDetailResul
           outTime: hmFromMs(s.endMs, zone),
           dutyHours: hoursFromMs(ms),
           workPlace: s.siteName || s.siteId || "On-site",
+          schedule: s.workScheduleLabel ?? "—",
           remark: "On-site session",
         });
       }
@@ -116,6 +126,7 @@ function buildDayEntryRows(day: string, zone: string, data: WorkerDayDetailResul
         outTime: hmFromMs(end, zone),
         dutyHours: hoursFromMs(ms),
         workPlace: data.currentSiteName || data.currentSiteId || "On-site",
+        schedule: "—",
         remark: "On-site session",
       });
     }
@@ -134,6 +145,7 @@ function buildDayEntryRows(day: string, zone: string, data: WorkerDayDetailResul
       outTime: hmFromMs(end, zone),
       dutyHours: hoursFromMs(ms),
       workPlace: r.siteName || r.siteId || "Overtime",
+      schedule: "—",
       remark: "Approved overtime",
     });
   }
@@ -147,10 +159,11 @@ function buildDayEntryRows(day: string, zone: string, data: WorkerDayDetailResul
       id: `${day}-off-${r.id}`,
       day,
       kind: "off_site",
-      inTime: hmStart || "—",
-      outTime: hmEnd || "—",
+      inTime: hmStart ? hm24to12(hmStart) : "—",
+      outTime: hmEnd ? hm24to12(hmEnd) : "—",
       dutyHours: hoursFromMs(ms),
       workPlace: "Off-site",
+      schedule: "—",
       remark: "Approved off-site",
     });
   }
@@ -163,6 +176,7 @@ function buildDayEntryRows(day: string, zone: string, data: WorkerDayDetailResul
       outTime: "—",
       dutyHours: 0,
       workPlace: "—",
+      schedule: "—",
       remark: "No work entry",
     });
   }
@@ -181,7 +195,8 @@ export async function buildWorkerMonthWorkingHours(
   const monthNum = Number(m[2]);
   if (monthNum < 1 || monthNum > 12) throw new Error("Invalid month");
 
-  const z = DEFAULT_ATTENDANCE_TIME_ZONE;
+  const userDoc = await db.collection("users").doc(workerId).get();
+  const z = timeZoneFromUserSnapshot(userDoc);
   const dayKeys: string[] = [];
 
   if (mode === "bs") {
@@ -228,7 +243,6 @@ export async function buildWorkerMonthWorkingHours(
   const regularHoursUpToCap = Math.min(totalHours, MONTHLY_REGULAR_CAP_HOURS);
   const hoursOverCapAsOvertime = Math.max(0, totalHours - MONTHLY_REGULAR_CAP_HOURS);
 
-  const userDoc = await db.collection("users").doc(workerId).get();
   const employeeIdRaw =
     (typeof userDoc.get("employeeId") === "string" && userDoc.get("employeeId")) ||
     (typeof userDoc.get("employeeCode") === "string" && userDoc.get("employeeCode")) ||

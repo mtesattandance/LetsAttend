@@ -109,6 +109,20 @@ export async function PATCH(
         400
       );
     }
+    const hasIn =
+      existing &&
+      typeof (existing as { overtimeCheckIn?: unknown }).overtimeCheckIn === "object" &&
+      ((existing as { overtimeCheckIn?: { time?: unknown } }).overtimeCheckIn?.time ?? null) != null;
+    const hasOut =
+      existing &&
+      typeof (existing as { overtimeCheckOut?: unknown }).overtimeCheckOut === "object" &&
+      ((existing as { overtimeCheckOut?: { time?: unknown } }).overtimeCheckOut?.time ?? null) != null;
+    if (!hasIn || !hasOut) {
+      return jsonError(
+        "Approve after overtime is completed. Worker must submit both overtime check-in and check-out first.",
+        400
+      );
+    }
   }
 
   const update: Record<string, unknown> = {
@@ -132,7 +146,7 @@ export async function PATCH(
       await createNotification(db, {
         userId: existing.workerId,
         title: "Overtime request approved ✓",
-        body: `Your overtime request for ${existing.date ?? ""} has been approved. You can now check in for overtime.`,
+        body: `Your completed overtime for ${existing.date ?? ""} has been approved.`,
         kind: "overtime_approved",
         link: "/dashboard/employee/overtime",
       });

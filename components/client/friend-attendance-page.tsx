@@ -25,6 +25,8 @@ export function FriendAttendancePage() {
   const [workers, setWorkers] = React.useState<WorkerRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [employeeIdQuery, setEmployeeIdQuery] = React.useState("");
+  const [selectedHasOpenSession, setSelectedHasOpenSession] = React.useState(false);
+  const [selectedWorkDone, setSelectedWorkDone] = React.useState(false);
 
   React.useEffect(() => {
     const auth = getFirebaseAuth();
@@ -59,6 +61,55 @@ export function FriendAttendancePage() {
       ),
     [employeeIdQuery, workers]
   );
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!selected) {
+        setSelectedHasOpenSession(false);
+        setSelectedWorkDone(false);
+        return;
+      }
+      try {
+        const auth = getFirebaseAuth();
+        const u = auth.currentUser;
+        if (!u) {
+          setSelectedHasOpenSession(false);
+          setSelectedWorkDone(false);
+          return;
+        }
+        const token = await u.getIdToken();
+        const res = await fetch(`/api/attendance/today?workerId=${encodeURIComponent(selected.id)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = (await res.json()) as {
+          checkIn?: unknown;
+          checkOut?: unknown;
+          error?: string;
+        };
+        if (!res.ok) throw new Error(data.error ?? "Failed to load selected worker attendance");
+        if (cancelled) return;
+        const checkedIn = !!data.checkIn;
+        const checkedOut = !!data.checkOut;
+        setSelectedHasOpenSession(checkedIn && !checkedOut);
+        setSelectedWorkDone(checkedIn && checkedOut);
+      } catch {
+        if (!cancelled) {
+          setSelectedHasOpenSession(false);
+          setSelectedWorkDone(false);
+        }
+      }
+    };
+    void run();
+    const t = window.setInterval(() => void run(), 45_000);
+    const onUpdated = () => void run();
+    window.addEventListener("attendance-updated", onUpdated);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+      window.removeEventListener("attendance-updated", onUpdated);
+    };
+  }, [selected]);
 
   return (
     <div className="p-3 sm:p-6 md:p-8">
@@ -114,12 +165,29 @@ export function FriendAttendancePage() {
         </p>
       ) : (
         <div className="mx-auto flex max-w-2xl flex-col gap-4 md:gap-6">
-          <EmployeeCheckInPanel proxyForUid={selected.id} />
-          <EmployeeSiteSwitchPanel
-            proxyForUid={selected.id}
-            subjectTimeZone={selected.timeZone}
-          />
-          <EmployeeCheckOutPanel proxyForUid={selected.id} />
+          {selectedWorkDone ? (
+            <p className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-300">
+              {selected.employeeId} is already checked out for today.
+            </p>
+          ) : null}
+          {selectedHasOpenSession ? (
+            <p className="rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-sm text-amber-200">
+              {selected.employeeId} is already checked in. Continue with <strong>Switch</strong> or{" "}
+              <strong>Check out</strong> below.
+            </p>
+          ) : null}
+          {!selectedHasOpenSession && !selectedWorkDone ? (
+            <EmployeeCheckInPanel proxyForUid={selected.id} />
+          ) : null}
+          {selectedHasOpenSession ? (
+            <EmployeeSiteSwitchPanel
+              proxyForUid={selected.id}
+              subjectTimeZone={selected.timeZone}
+            />
+          ) : null}
+          {selectedHasOpenSession ? (
+            <EmployeeCheckOutPanel proxyForUid={selected.id} />
+          ) : null}
         </div>
       )}
     </div>

@@ -35,8 +35,22 @@ export function getGpsFix(options?: GetGpsFixOptions): Promise<GpsResult> {
 
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve(toResult(pos)),
-      () => {
-        reject(new Error("GPS denied or unavailable. Enable location for this site."));
+      (err) => {
+        const code = (err as GeolocationPositionError)?.code;
+        let message: string;
+        if (code === 1) {
+          message =
+            "Location access was blocked. Allow location for this site in your browser (lock icon in the address bar), then try again.";
+        } else if (code === 2) {
+          message =
+            "Location is unavailable (GPS off, poor signal, or device can’t determine position). Move outdoors or enable location services.";
+        } else if (code === 3) {
+          message = `Location request timed out after ${Math.round(timeoutMs / 1000)}s. Try again with a clearer sky view or disable battery saver.`;
+        } else {
+          message =
+            "Could not read your location. Use HTTPS or localhost, allow location for this page, and try again.";
+        }
+        reject(new Error(message));
       },
       {
         enableHighAccuracy: true,

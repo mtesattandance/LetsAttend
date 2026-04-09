@@ -3,7 +3,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
-import { X } from "lucide-react";
+import { Search, Trash2, X } from "lucide-react";
 import { AttendanceCalendar } from "@/components/client/attendance-calendar";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +19,9 @@ import { getFirebaseAuth } from "@/lib/firebase/client";
 import { TableRowsSkeleton } from "@/components/client/dashboard-skeletons";
 import { useDashboardUser } from "@/components/client/dashboard-user-context";
 import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+
+const TABLE_PAGE_SIZE = 15;
 
 type Row = {
   id: string;
@@ -52,8 +55,12 @@ export function AdminUsersPanel() {
   const [resetMsg, setResetMsg] = React.useState<string | null>(null);
   const [assignWorker, setAssignWorker] = React.useState<Row | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<Row | null>(null);
+  const [bulkDeleteTargets, setBulkDeleteTargets] = React.useState<Row[] | null>(null);
   const [deletePhrase, setDeletePhrase] = React.useState("");
   const [deleteBusy, setDeleteBusy] = React.useState(false);
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = React.useState<string[]>([]);
+  const [page, setPage] = React.useState(1);
   const [archiveBusy, setArchiveBusy] = React.useState(false);
 
   const [calendarOpen, setCalendarOpen] = React.useState(false);
@@ -118,6 +125,54 @@ export function AdminUsersPanel() {
   const openCalendarFor = (workerId: string) => {
     setCalendarWorkerId(workerId);
     setCalendarOpen(true);
+  };
+
+  const filteredUsers = React.useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter((r) => {
+      const fields = [r.name, r.email, r.role, r.id, r.employeeId ?? ""];
+      return fields.some((f) => (typeof f === "string" ? f : "").toLowerCase().includes(q));
+    });
+  }, [users, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / TABLE_PAGE_SIZE));
+  const paginatedUsers = React.useMemo(
+    () => filteredUsers.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE),
+    [filteredUsers, page]
+  );
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [searchQuery]);
+
+  React.useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const viewerId = viewer?.uid ?? "";
+
+  const toggleSelectEmployee = (id: string) => {
+    if (id === viewerId) return;
+    setSelectedEmployeeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const deletableOnPage = React.useMemo(
+    () => paginatedUsers.filter((r) => r.role === "employee" && r.id !== viewerId),
+    [paginatedUsers, viewerId]
+  );
+
+  const allDeletablePageSelected =
+    deletableOnPage.length > 0 &&
+    deletableOnPage.every((r) => selectedEmployeeIds.includes(r.id));
+
+  const toggleSelectAllDeletablePage = () => {
+    const ids = deletableOnPage.map((r) => r.id);
+    if (allDeletablePageSelected) {
+      setSelectedEmployeeIds((prev) => prev.filter((id) => !ids.includes(id)));
+    } else {
+      setSelectedEmployeeIds((prev) => [...new Set([...prev, ...ids])]);
+    }
   };
 
   const requestResetLink = async () => {
@@ -186,6 +241,23 @@ export function AdminUsersPanel() {
     }
   };
 
+  const deleteEmployeeRequest = async (userId: string) => {
+    const auth = getFirebaseAuth();
+    const u = auth.currentUser;
+    if (!u) throw new Error("Not signed in");
+    const token = await u.getIdToken();
+    const res = await fetch("/api/admin/delete-user", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ userId, confirmPhrase: "DELETE EMPLOYEE" }),
+    });
+    const data = (await res.json()) as { error?: string };
+    if (!res.ok) throw new Error(data.error ?? "Failed");
+  };
+
   const deleteUser = async () => {
     if (!deleteTarget) return;
     if (deletePhrase.trim() !== "DELETE EMPLOYEE") {
@@ -195,21 +267,34 @@ export function AdminUsersPanel() {
     setDeleteBusy(true);
     setResetMsg(null);
     try {
-      const auth = getFirebaseAuth();
-      const u = auth.currentUser;
-      if (!u) throw new Error("Not signed in");
-      const token = await u.getIdToken();
-      const res = await fetch("/api/admin/delete-user", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ userId: deleteTarget.id, confirmPhrase: "DELETE EMPLOYEE" }),
-      });
-      const data = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Failed");
+      const uid = deleteTarget.id;
+      await deleteEmployeeRequest(uid);
       setDeleteTarget(null);
+      setDeletePhrase("");
+      setSelectedEmployeeIds((prev) => prev.filter((id) => id !== uid));
+      await load();
+    } catch (e) {
+      setResetMsg(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  const deleteBulkEmployees = async () => {
+    if (!bulkDeleteTargets?.length) return;
+    if (deletePhrase.trim() !== "DELETE EMPLOYEE") {
+      setResetMsg("Type exactly: DELETE EMPLOYEE");
+      return;
+    }
+    setDeleteBusy(true);
+    setResetMsg(null);
+    try {
+      for (const row of bulkDeleteTargets) {
+        await deleteEmployeeRequest(row.id);
+      }
+      const removed = new Set(bulkDeleteTargets.map((r) => r.id));
+      setSelectedEmployeeIds((prev) => prev.filter((id) => !removed.has(id)));
+      setBulkDeleteTargets(null);
       setDeletePhrase("");
       await load();
     } catch (e) {
@@ -400,6 +485,78 @@ export function AdminUsersPanel() {
           )
         : null}
 
+      {bulkDeleteTargets && bulkDeleteTargets.length > 0 && mounted && typeof document !== "undefined"
+        ? createPortal(
+            <div className="fixed inset-0 z-[1360] flex items-center justify-center p-4">
+              <button
+                type="button"
+                className="absolute inset-0 bg-zinc-950/75 backdrop-blur-sm"
+                aria-label="Close bulk delete dialog"
+                onClick={() => {
+                  if (deleteBusy) return;
+                  setBulkDeleteTargets(null);
+                  setDeletePhrase("");
+                }}
+              />
+              <Card className="relative z-[1] w-full max-w-lg border-red-500/30 bg-zinc-950 text-zinc-100">
+                <CardHeader>
+                  <CardTitle className="text-red-400">Delete {bulkDeleteTargets.length} employees</CardTitle>
+                  <CardDescription className="text-zinc-400">
+                    This will permanently remove each selected worker&apos;s profile, attendance,
+                    overtime/off-site history, notifications, live tracking, and Firebase auth account.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <ul className="max-h-36 list-inside list-disc overflow-y-auto text-sm text-zinc-300">
+                    {bulkDeleteTargets.slice(0, 15).map((r) => (
+                      <li key={r.id}>
+                        {r.name || r.email} <span className="text-zinc-500">({r.email})</span>
+                      </li>
+                    ))}
+                    {bulkDeleteTargets.length > 15 ? (
+                      <li className="list-none text-zinc-500">…and {bulkDeleteTargets.length - 15} more</li>
+                    ) : null}
+                  </ul>
+                  <label className="block text-sm">
+                    <span className="mb-1 block text-zinc-400">
+                      Type <strong className="text-zinc-100">DELETE EMPLOYEE</strong> to confirm
+                    </span>
+                    <input
+                      value={deletePhrase}
+                      onChange={(e) => setDeletePhrase(e.target.value)}
+                      className="w-full rounded-xl border border-red-500/30 bg-zinc-900 px-3 py-2 font-mono text-sm"
+                      placeholder="DELETE EMPLOYEE"
+                      disabled={deleteBusy}
+                    />
+                  </label>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={deleteBusy}
+                      onClick={() => {
+                        setBulkDeleteTargets(null);
+                        setDeletePhrase("");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      disabled={deleteBusy}
+                      onClick={() => void deleteBulkEmployees()}
+                    >
+                      {deleteBusy ? "Deleting..." : `Delete ${bulkDeleteTargets.length}`}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>,
+            document.body
+          )
+        : null}
+
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -435,14 +592,76 @@ export function AdminUsersPanel() {
         </CardHeader>
         <CardContent className="space-y-4">
           {loading ? (
-            <TableRowsSkeleton rows={6} />
+            <TableRowsSkeleton rows={TABLE_PAGE_SIZE} />
           ) : err ? (
             <p className="text-sm text-red-400">{err}</p>
           ) : (
+            <>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="relative max-w-md flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500" />
+                  <Input
+                    type="search"
+                    placeholder="Search by name, email, employee ID, role…"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-10 pl-9 dark:bg-zinc-950"
+                    aria-label="Search workers"
+                  />
+                </div>
+                {canDeleteUsers && selectedEmployeeIds.length > 0 ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-zinc-500">{selectedEmployeeIds.length} selected</span>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        const rows = users.filter(
+                          (r) => r.role === "employee" && selectedEmployeeIds.includes(r.id)
+                        );
+                        if (rows.length === 0) return;
+                        setBulkDeleteTargets(rows);
+                        setDeletePhrase("");
+                        setResetMsg(null);
+                      }}
+                    >
+                      <Trash2 className="mr-1.5 size-4" />
+                      Delete selected
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-zinc-500"
+                      onClick={() => setSelectedEmployeeIds([])}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+
+              {users.length === 0 ? (
+                <p className="text-sm text-zinc-500">No users found.</p>
+              ) : filteredUsers.length === 0 ? (
+                <p className="text-sm text-zinc-500">No users match your search.</p>
+              ) : (
             <div className="overflow-x-auto rounded-xl border border-white/10">
-              <table className="w-full min-w-[640px] text-left text-sm">
+              <table className="w-full min-w-[720px] border-collapse text-left text-sm tabular-nums">
                 <thead className="border-b border-white/10 bg-white/[0.03] text-xs uppercase text-zinc-500">
                   <tr>
+                    {canDeleteUsers ? (
+                      <th className="w-10 px-2 py-2">
+                        <input
+                          type="checkbox"
+                          className="size-4 rounded border-zinc-600 accent-cyan-600"
+                          checked={allDeletablePageSelected}
+                          onChange={toggleSelectAllDeletablePage}
+                          aria-label="Select all deletable employees on this page"
+                        />
+                      </th>
+                    ) : null}
                     <th className="px-3 py-2">Name</th>
                     <th className="px-3 py-2">Email</th>
                     <th className="px-3 py-2">Role</th>
@@ -453,12 +672,31 @@ export function AdminUsersPanel() {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((r) => (
+                  {paginatedUsers.map((r) => (
                     <tr
                       key={r.id}
                       className="cursor-pointer border-b border-white/5 hover:bg-white/[0.02]"
                       onClick={() => openCalendarFor(r.id)}
                     >
+                      {canDeleteUsers ? (
+                        <td
+                          className="px-2 py-2"
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        >
+                          {r.role === "employee" && r.id !== viewerId ? (
+                            <input
+                              type="checkbox"
+                              className="size-4 rounded border-zinc-600 accent-cyan-600"
+                              checked={selectedEmployeeIds.includes(r.id)}
+                              onChange={() => toggleSelectEmployee(r.id)}
+                              aria-label={`Select ${r.name || r.email}`}
+                            />
+                          ) : (
+                            <span className="inline-block w-4 text-center text-zinc-600">—</span>
+                          )}
+                        </td>
+                      ) : null}
                       <td className="px-3 py-2 font-medium">{r.name}</td>
                       <td className="px-3 py-2 text-zinc-400">{r.email}</td>
                       <td className="px-3 py-2 capitalize">{r.role}</td>
@@ -540,7 +778,44 @@ export function AdminUsersPanel() {
                   ))}
                 </tbody>
               </table>
+              {totalPages > 1 ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-white/[0.02] px-3 py-2.5 text-sm">
+                  <span className="text-zinc-400">
+                    Showing {(page - 1) * TABLE_PAGE_SIZE + 1}–
+                    {Math.min(page * TABLE_PAGE_SIZE, filteredUsers.length)} of {filteredUsers.length}
+                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={page <= 1}
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    >
+                      Previous
+                    </Button>
+                    <span className="text-zinc-500">
+                      Page {page} / {totalPages}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={page >= totalPages}
+                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="border-t border-white/10 px-3 py-2 text-xs text-zinc-500">
+                  Showing 1–{filteredUsers.length} of {filteredUsers.length} ({TABLE_PAGE_SIZE} per page)
+                </div>
+              )}
             </div>
+              )}
+            </>
           )}
 
           <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">

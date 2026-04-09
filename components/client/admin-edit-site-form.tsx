@@ -38,7 +38,7 @@ export function AdminEditSiteForm({
   const [radius, setRadius] = React.useState("80");
   const [workdayStartUtc, setWorkdayStartUtc] = React.useState("");
   const [workdayEndUtc, setWorkdayEndUtc] = React.useState("17:00");
-  const [checkoutGraceMinutes, setCheckoutGraceMinutes] = React.useState("20");
+  const [checkoutGraceMinutes, setCheckoutGraceMinutes] = React.useState("30");
   const [msg, setMsg] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [placeQuery, setPlaceQuery] = React.useState("");
@@ -71,7 +71,7 @@ export function AdminEditSiteForm({
         : "17:00")
     );
     const grace = Number(site.checkoutGraceMinutes);
-    setCheckoutGraceMinutes(Number.isFinite(grace) && grace > 0 ? String(grace) : "20");
+    setCheckoutGraceMinutes(Number.isFinite(grace) && grace > 0 ? String(grace) : "30");
     setRecenterAt(null);
     setRecenterSeq((n) => n + 1);
   }, [site.id, site.name, site.latitude, site.longitude, site.radius, site.workdayStartUtc, site.workdayEndUtc, site.autoCheckoutUtc]);
@@ -149,11 +149,20 @@ export function AdminEditSiteForm({
       const u = auth.currentUser;
       if (!u) throw new Error("Not signed in");
       const token = await u.getIdToken();
+      if (!name.trim()) {
+        throw new Error("Please enter a site name.");
+      }
       const lat = Number(latitude);
       const lng = Number(longitude);
       const rad = Number(radius);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        throw new Error("Pick a location pin on the map.");
+        throw new Error("Please pick a location on the map before saving.");
+      }
+      if (!Number.isFinite(rad) || rad <= 0) {
+        throw new Error("Please enter a valid radius in meters (e.g. 50–200).");
+      }
+      if (rad > 5000) {
+        throw new Error("Radius cannot exceed 5000 meters.");
       }
       const res = await fetch("/api/admin/sites", {
         method: "PATCH",
@@ -169,7 +178,7 @@ export function AdminEditSiteForm({
           radius: rad,
           workdayStartUtc: workdayStartUtc.trim(),
           workdayEndUtc: workdayEndUtc.trim() || undefined,
-          checkoutGraceMinutes: Number(checkoutGraceMinutes) || 20,
+          checkoutGraceMinutes: Number(checkoutGraceMinutes) || 30,
         }),
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
@@ -186,7 +195,7 @@ export function AdminEditSiteForm({
   return (
     <div className="space-y-4">
       <p className="text-sm text-zinc-500">
-        Change geofence radius, pin location, name, or NPT work times. Saving updates live checks and maps
+        Change geofence radius, pin location, name, or site local work times. Saving updates live checks and maps
         immediately.
       </p>
 
@@ -304,7 +313,7 @@ export function AdminEditSiteForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <UtcTimePicker
             id={`edit-work-start-${site.id}`}
-            label="Expected work start (NPT)"
+            label="Expected work start (site local time)"
             value={workdayStartUtc}
             onChange={setWorkdayStartUtc}
             allowEmpty
@@ -312,7 +321,7 @@ export function AdminEditSiteForm({
           />
           <UtcTimePicker
             id={`edit-work-end-${site.id}`}
-            label="Work end time (NPT)"
+            label="Work end time (site local time)"
             value={workdayEndUtc}
             onChange={setWorkdayEndUtc}
             variant="dark"
@@ -331,9 +340,9 @@ export function AdminEditSiteForm({
           />
         </label>
         <p className="text-xs text-zinc-500">
-          After <strong>Work end time</strong>, employees have this many minutes to manually check out
-          with a selfie. Their recorded checkout time is still capped at the work end time (grace period
-          does not count as working hours). Auto-checkout fires at the end of this grace window.
+          From <strong>Work end time</strong> through this many minutes after, employees can check out with a
+          selfie. The stored check-out time is the work end time (grace time is not added to hours). If they
+          never check out in this window, the current site segment is credited as zero hours.
         </p>
         <Button type="submit" disabled={busy}>
           {busy ? "Saving…" : "Save changes"}

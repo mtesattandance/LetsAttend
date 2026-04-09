@@ -321,9 +321,9 @@ export default function AdminOvertimePage() {
       <div className="mb-6 md:mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">Overtime</h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Approve or reject, unapprove back to pending (clears overtime GPS), or delete. Employees record
+          Review completed overtime sessions (GPS + selfie proof), then approve or reject. Employees record
           overtime on{" "}
-          <strong className="text-zinc-900 dark:text-zinc-300">Employee → Overtime</strong> after approval.
+          <strong className="text-zinc-900 dark:text-zinc-300">Employee → Overtime</strong> before admin review.
         </p>
       </div>
 
@@ -346,7 +346,7 @@ export default function AdminOvertimePage() {
           <CardHeader>
             <CardTitle>Queue</CardTitle>
             <CardDescription>
-              Newest first. Approve only after a site is set (pick one if the employee left it blank).
+              Newest first. Workers submit overtime check-in and check-out first; approve only after both are present.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -364,12 +364,13 @@ export default function AdminOvertimePage() {
                   const pick =
                     approveSiteId[r.id] ??
                     (typeof r.siteId === "string" ? r.siteId : "");
-                  const canApprove = r.status === "pending" && Boolean(pick.trim());
 
                   const inTs = r.overtimeCheckIn?.time;
                   const outTs = r.overtimeCheckOut?.time;
                   const hasIn = getFirestoreSeconds(inTs) != null;
                   const hasOut = getFirestoreSeconds(outTs) != null;
+                  const canApprove =
+                    r.status === "pending" && Boolean(pick.trim()) && hasIn && hasOut;
 
                   return (
                     <li
@@ -423,7 +424,7 @@ export default function AdminOvertimePage() {
                       </dl>
                       <p className="mt-2 text-zinc-800 dark:text-zinc-300">{r.reason ?? "—"}</p>
 
-                      {r.status === "approved" ? (
+                      {(r.status === "approved" || (r.status === "pending" && (hasIn || hasOut))) ? (
                         <div className="mt-3 space-y-2 rounded-lg border border-violet-500/25 bg-violet-500/[0.06] p-3 text-xs dark:border-violet-500/20 dark:bg-violet-500/[0.04]">
                           <p className="font-medium text-violet-900 dark:text-violet-200/90">
                             Overtime attendance
@@ -478,6 +479,11 @@ export default function AdminOvertimePage() {
                           ) : hasIn ? (
                             <p className="text-amber-900 dark:text-amber-200/80">Awaiting check-out.</p>
                           ) : null}
+                          {r.status === "pending" && hasIn && hasOut ? (
+                            <p className="border-t border-violet-500/20 pt-2 text-amber-900 dark:text-amber-200/90">
+                              Completed by worker. Pending your decision.
+                            </p>
+                          ) : null}
                         </div>
                       ) : null}
 
@@ -503,6 +509,11 @@ export default function AdminOvertimePage() {
                               listClassName="max-h-[min(280px,50vh)]"
                             />
                           </label>
+                          {!hasIn || !hasOut ? (
+                            <p className="text-xs text-amber-700 dark:text-amber-300/90">
+                              Approve is enabled only after both overtime check-in and check-out are recorded.
+                            </p>
+                          ) : null}
                           <div className="flex flex-wrap gap-2">
                             <Button
                               type="button"

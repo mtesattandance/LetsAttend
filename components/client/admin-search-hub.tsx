@@ -286,7 +286,7 @@ export function AdminSearchHub() {
             <AttendanceCalendar
               workerId={workerModal.id}
               title="Attendance"
-              description="Tap a day for the full timeline in work time (NPT), same as Workers."
+              description="Tap a day for the full timeline in work time (your profile zone), same as Workers."
               adminDayDetailBasePath="/dashboard/admin/workers"
             />
             <div className="mt-4 flex flex-wrap gap-2">

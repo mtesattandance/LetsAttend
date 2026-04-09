@@ -6,7 +6,7 @@ import { useDashboardUser } from "@/components/client/dashboard-user-context";
 import { normalizeTimeZoneId } from "@/lib/date/time-zone";
 
 /**
- * Keeps `users.timeZone` aligned with the device’s time zone (e.g. India → `Asia/Kolkata`, Nepal → `Asia/Kathmandu`).
+ * Keeps `users.timeZone` aligned with the device’s IANA time zone.
  * Updates via `/api/user/timezone` because Firestore rules block direct client edits to `timeZone`.
  */
 export function BrowserTimeZoneSync() {

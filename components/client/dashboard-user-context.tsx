@@ -15,7 +15,7 @@ export type DashboardUser = {
   employeeId?: string;
   /** Employee work sites (from Firestore). Empty until an admin assigns. */
   assignedSites: string[];
-  /** IANA timezone for attendance calendar days (default Nepal). */
+  /** IANA timezone for attendance calendar days (falls back if unset). */
   timeZone: string;
 };
 

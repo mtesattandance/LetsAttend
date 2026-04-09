@@ -318,8 +318,7 @@ export function AdminSiteDetail({ siteId }: { siteId: string }) {
                 <CardTitle className="text-base">Site details</CardTitle>
                 <CardDescription>
                   Data for attendance day{" "}
-                  <span className="font-mono text-zinc-800 dark:text-zinc-300">{insights?.today ?? "…"}</span>{" "}
-                  (Nepal NPT calendar day).
+                  <span className="font-mono text-zinc-800 dark:text-zinc-300">{insights?.today ?? "…"}</span>.
                 </CardDescription>
               </div>
               <Button
@@ -621,7 +620,7 @@ export function AdminSiteDetail({ siteId }: { siteId: string }) {
             ) : insights && detailTab === "photos" ? (
               <div className="space-y-6">
                 <p className="text-xs text-zinc-500">
-                  Uploaded photos for this site today (calendar day {insights.today}, NPT): check-in, site
+                  Uploaded photos for this site on calendar day {insights.today}: check-in, site
                   switch
                   arrivals, and check-out while at this site.
                 </p>

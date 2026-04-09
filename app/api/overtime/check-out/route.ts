@@ -5,6 +5,7 @@ import { requireBearerUser } from "@/lib/auth/verify-request";
 import { jsonError } from "@/lib/api/json-error";
 import { isWithinSiteRadius } from "@/lib/geo/validate-site";
 import { localCalendarDateKeyFromTimezoneOffset } from "@/lib/date/today-key";
+import { createNotification } from "@/lib/notifications/create-notification";
 
 export const runtime = "nodejs";
 
@@ -42,8 +43,8 @@ export async function POST(req: Request) {
 
   const row = snap.data()!;
   if (row.workerId !== uid) return jsonError("Not your overtime request", 403);
-  if (row.status !== "approved") {
-    return jsonError("Overtime must be approved before checkout", 403);
+  if (row.status === "rejected") {
+    return jsonError("This overtime request is rejected. Create a new one to continue.", 403);
   }
 
   const todayKey = localCalendarDateKeyFromTimezoneOffset(timezoneOffset);
@@ -104,8 +105,41 @@ export async function POST(req: Request) {
       },
       photoUrl,
     },
+    // Overtime is reviewed after the worker finishes and submits both proofs.
+    status: "pending",
+    reviewNote: null,
+    reviewedByUid: FieldValue.delete(),
+    reviewedByEmail: FieldValue.delete(),
+    reviewedAt: FieldValue.delete(),
     updatedAt: now,
   });
+
+  try {
+    const admins = await db
+      .collection("users")
+      .where("role", "in", ["admin", "super_admin"])
+      .get();
+    const workerLabel =
+      typeof row.workerName === "string" && row.workerName.trim()
+        ? row.workerName.trim()
+        : typeof row.workerEmail === "string" && row.workerEmail.trim()
+          ? row.workerEmail.trim()
+          : uid;
+    const workDate = typeof row.date === "string" ? row.date : "selected date";
+    await Promise.all(
+      admins.docs.map((ad) =>
+        createNotification(db, {
+          userId: ad.id,
+          title: "Overtime submitted for approval",
+          body: `${workerLabel} completed overtime (check-in/out with GPS + selfie) for ${workDate}.`,
+          kind: "overtime_request",
+          link: "/dashboard/admin/overtime",
+        })
+      )
+    );
+  } catch {
+    /* non-critical */
+  }
 
   return NextResponse.json({
     ok: true,

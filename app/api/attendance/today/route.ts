@@ -4,6 +4,13 @@ import { requireBearerUser } from "@/lib/auth/verify-request";
 import { jsonError } from "@/lib/api/json-error";
 import { calendarDateKeyInTimeZone } from "@/lib/date/calendar-day-key";
 import { timeZoneFromUserSnapshot } from "@/lib/attendance/time-zone-from-snap";
+import { resolveSiteScheduleTimeZone } from "@/lib/server/site-schedule-time-zone";
+import { canRecordAttendanceFor } from "@/lib/attendance/proxy-attendance";
+import {
+  computeCheckoutWindowState,
+  DEFAULT_CHECKOUT_GRACE_MINUTES,
+  type CheckoutWindowState,
+} from "@/lib/site/work-window";
 
 export const runtime = "nodejs";
 
@@ -25,14 +32,29 @@ export async function GET(req: Request) {
   const decoded = auth.decoded;
 
   const db = adminDb();
-  const userSnap = await db.collection("users").doc(decoded.uid).get();
-  const tz = timeZoneFromUserSnapshot(userSnap);
+  const callerSnap = await db.collection("users").doc(decoded.uid).get();
+  const url = new URL(req.url);
+  const workerIdRaw = url.searchParams.get("workerId")?.trim() || decoded.uid;
+
+  let workerId = decoded.uid;
+  let workerSnap = callerSnap;
+  if (workerIdRaw !== decoded.uid) {
+    const subjectSnap = await db.collection("users").doc(workerIdRaw).get();
+    if (!subjectSnap.exists) return jsonError("Worker not found", 404);
+    if (!canRecordAttendanceFor(callerSnap, subjectSnap)) {
+      return jsonError("Not allowed to view attendance for this worker", 403);
+    }
+    workerId = workerIdRaw;
+    workerSnap = subjectSnap;
+  }
+
+  const tz = timeZoneFromUserSnapshot(workerSnap);
   const defaultDay = calendarDateKeyInTimeZone(new Date(), tz);
-  const day = new URL(req.url).searchParams.get("day")?.trim() || defaultDay;
+  const day = url.searchParams.get("day")?.trim() || defaultDay;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
     return jsonError("Invalid day", 400);
   }
-  const attRef = db.collection("attendance").doc(`${decoded.uid}_${day}`);
+  const attRef = db.collection("attendance").doc(`${workerId}_${day}`);
   const attSnap = await attRef.get();
   if (!attSnap.exists) {
     return NextResponse.json({
@@ -45,7 +67,10 @@ export async function GET(req: Request) {
       siteSwitchLogs: [],
       workdayStartUtc: null as string | null,
       workdayEndUtc: null as string | null,
-    });
+      scheduleTimeZone: null as string | null,
+      checkoutGraceMinutes: null as number | null,
+      checkoutWindowState: null as CheckoutWindowState | null,
+    } as const);
   }
 
   const data = attSnap.data()!;
@@ -54,6 +79,8 @@ export async function GET(req: Request) {
   let siteName: string | null = null;
   let workdayStartUtc: string | null = null;
   let workdayEndUtc: string | null = null;
+  let scheduleTimeZone: string | null = null;
+  let checkoutGraceMinutes: number | null = null;
 
   if (siteId) {
     const siteSnap = await db.collection("sites").doc(siteId).get();
@@ -70,8 +97,24 @@ export async function GET(req: Request) {
         (typeof s.autoCheckoutUtc === "string" && s.autoCheckoutUtc.trim()
           ? s.autoCheckoutUtc.trim()
           : null);
+      scheduleTimeZone = resolveSiteScheduleTimeZone(s);
+      const g = Number(s.checkoutGraceMinutes);
+      checkoutGraceMinutes =
+        Number.isFinite(g) && g > 0 ? g : DEFAULT_CHECKOUT_GRACE_MINUTES;
     }
   }
+
+  const hasOpenSession = !!(data.checkIn && !data.checkOut);
+  const checkoutWindowState =
+    hasOpenSession && scheduleTimeZone
+      ? computeCheckoutWindowState({
+          workdayEndUtc,
+          scheduleZone: scheduleTimeZone,
+          attendanceDay: day,
+          checkoutGraceMinutes: checkoutGraceMinutes ?? DEFAULT_CHECKOUT_GRACE_MINUTES,
+          nowMs: Date.now(),
+        })
+      : null;
 
   const checkIn = data.checkIn as
     | { time?: unknown; photoUrl?: string; gps?: unknown }
@@ -152,6 +195,9 @@ export async function GET(req: Request) {
     siteName,
     workdayStartUtc,
     workdayEndUtc,
+    scheduleTimeZone,
+    checkoutGraceMinutes,
+    checkoutWindowState,
     checkIn: checkIn
       ? {
           atMs: tsMs(checkIn.time),

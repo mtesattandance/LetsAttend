@@ -7,6 +7,8 @@ import { isWithinSiteRadius } from "@/lib/geo/validate-site";
 import { calendarDateKeyInTimeZone } from "@/lib/date/calendar-day-key";
 import { timeZoneFromUserSnapshot } from "@/lib/attendance/time-zone-from-snap";
 import { canRecordAttendanceFor } from "@/lib/attendance/proxy-attendance";
+import { computeWorkWindow } from "@/lib/site/work-window";
+import { resolveSiteScheduleTimeZone } from "@/lib/server/site-schedule-time-zone";
 
 export const runtime = "nodejs";
 
@@ -100,6 +102,34 @@ export async function POST(req: Request) {
     : [];
   if (role === "employee" && assigned.length > 0 && !assigned.includes(siteId)) {
     return jsonError("Site not assigned to this worker", 403);
+  }
+
+  const scheduleZone = resolveSiteScheduleTimeZone(site);
+  const workdayStartUtc =
+    typeof site.workdayStartUtc === "string" && site.workdayStartUtc.trim()
+      ? site.workdayStartUtc.trim()
+      : null;
+  const workdayEndUtc =
+    (typeof site.workdayEndUtc === "string" && site.workdayEndUtc.trim()
+      ? site.workdayEndUtc.trim()
+      : null) ??
+    (typeof site.autoCheckoutUtc === "string" && site.autoCheckoutUtc.trim()
+      ? site.autoCheckoutUtc.trim()
+      : null);
+  const windowState = computeWorkWindow({
+    workdayStartUtc,
+    workdayEndUtc,
+    scheduleZone,
+    nowMs: Date.now(),
+  });
+  if (windowState === "early" || windowState === "late" || windowState === "missed_check_in") {
+    const msg =
+      windowState === "early"
+        ? "Check-in opens 15 minutes before shift start through 15 minutes after start, or submit an overtime request to arrive earlier."
+        : windowState === "missed_check_in"
+          ? "You missed the regular check-in window (15 minutes before through 15 minutes after shift start). Submit an overtime request or contact an admin."
+          : "Regular check-in is not allowed after working hours — submit an overtime request.";
+    return jsonError(msg, 403);
   }
 
   const tz = timeZoneFromUserSnapshot(workerSnap);

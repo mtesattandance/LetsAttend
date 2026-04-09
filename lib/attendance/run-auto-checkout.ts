@@ -5,7 +5,9 @@ import {
   recentAttendanceDayKeysForQuery,
 } from "@/lib/date/calendar-day-key";
 import { zonedWallClockToUtcMillis } from "@/lib/site/zoned-schedule";
-import { scheduleTimeZoneFromSiteData, timeZoneFromUserSnapshot } from "@/lib/attendance/time-zone-from-snap";
+import { timeZoneFromUserSnapshot } from "@/lib/attendance/time-zone-from-snap";
+import { resolveSiteScheduleTimeZone } from "@/lib/server/site-schedule-time-zone";
+import { DEFAULT_CHECKOUT_GRACE_MINUTES } from "@/lib/site/work-window";
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -24,8 +26,8 @@ function placeholderPhotoUrl(): string {
 }
 
 /**
- * Cron: close open rows when “now” is past that attendance day’s configured local auto check-out time
- * (wall clock in the site’s {@link scheduleTimeZoneFromSiteData}, default Nepal).
+ * Cron: close open attendance rows after the manual check-out grace window has passed.
+ * Check-out is recorded at `workdayEndUtc` (wall clock on the attendance day in the site schedule zone).
  */
 export async function runAutoCheckout(): Promise<{ processed: number; errors: string[] }> {
   const db = adminDb();
@@ -80,8 +82,6 @@ export async function runAutoCheckout(): Promise<{ processed: number; errors: st
       const siteSnap = await db.collection("sites").doc(siteId).get();
       if (!siteSnap.exists) continue;
       const site = siteSnap.data()!;
-      // workdayEndUtc is the new field; fall back to legacy autoCheckoutUtc for old site docs;
-      // ultimate fallback is 17:00 (5 PM NPT) — the typical end of a regular shift.
       const hhmm =
         (typeof site.workdayEndUtc === "string" && site.workdayEndUtc.trim()
           ? site.workdayEndUtc.trim()
@@ -91,22 +91,22 @@ export async function runAutoCheckout(): Promise<{ processed: number; errors: st
           : null) ??
         "17:00";
 
-      const siteTz = scheduleTimeZoneFromSiteData(site);
+      const siteTz = resolveSiteScheduleTimeZone(site);
       const deadline = zonedWallClockToUtcMillis(dayKey, hhmm, siteTz);
       if (deadline == null) continue;
 
-      // Grace period: employees can manually check out within this window after workdayEndUtc.
-      // Auto-checkout fires only AFTER the grace window expires.
       const graceMinutes = Number(site.checkoutGraceMinutes);
-      const graceMs = (Number.isFinite(graceMinutes) && graceMinutes > 0 ? graceMinutes : 20) * 60_000;
+      const graceM =
+        Number.isFinite(graceMinutes) && graceMinutes > 0
+          ? graceMinutes
+          : DEFAULT_CHECKOUT_GRACE_MINUTES;
+      const graceMs = graceM * 60_000;
       const graceDeadline = deadline + graceMs;
 
-      // Not yet past the grace window — skip for now.
       if (nowMs < graceDeadline) continue;
 
       const lat = Number(site.latitude);
       const lng = Number(site.longitude);
-      // Record checkout AT workdayEndUtc (not at grace deadline) so grace time is never counted.
       const checkoutTime = new Date(deadline);
 
       await doc.ref.set(

@@ -24,10 +24,6 @@ import type {
 import { formatInstantTime12hInZone, formatWallHm12h } from "@/lib/time/format-wall-time";
 import { DateTime } from "luxon";
 
-function zoneShortLabel(tz: string): string {
-  return tz === "Asia/Kathmandu" ? "NPT" : tz;
-}
-
 export type DayDetailPayload =
   | {
       ok: true;
@@ -65,7 +61,7 @@ export type DayDetailPayload =
         auto: boolean;
       } | null;
       timeline: {
-        kind: "check_in" | "site_switch" | "check_out" | "offline_window" | "out_of_site_window";
+        kind: "check_in" | "site_switch" | "check_out" | "offline_window" | "out_of_site_window" | "overtime" | "offsite";
         atMs: number;
         [key: string]: unknown;
       }[];
@@ -82,7 +78,8 @@ export type DayDetailPayload =
           siteName: string;
           startMs: number;
           endMs: number | null;
-          durationMs: number | null;
+          durationMs: number;
+          workScheduleLabel: string | null;
         }[];
         tracking: {
           pingCount: number;
@@ -543,9 +540,14 @@ export function AttendanceDayDetailView({
                           {fmtLocal(seg.startMs, displayTz, mode)}
                           {seg.endMs != null ? ` → ${fmtLocal(seg.endMs, displayTz, mode)}` : " → …"}
                         </p>
+                        {seg.workScheduleLabel ? (
+                          <p className="text-xs text-zinc-400">Shift: {seg.workScheduleLabel}</p>
+                        ) : null}
                       </div>
                       <p className="font-mono text-cyan-800 dark:text-cyan-300/90">
-                        {seg.durationMs != null ? fmtDuration(seg.durationMs) : "In progress"}
+                        {data.analytics.sessionOpen && seg.endMs == null
+                          ? `${fmtDuration(seg.durationMs)} (so far)`
+                          : fmtDuration(seg.durationMs)}
                       </p>
                     </li>
                   ))}
@@ -605,7 +607,11 @@ export function AttendanceDayDetailView({
                         ? "border-orange-500"
                         : ev.kind === "out_of_site_window"
                           ? "border-red-500"
-                          : "border-violet-500"
+                          : ev.kind === "overtime"
+                            ? "border-amber-400"
+                            : ev.kind === "offsite"
+                              ? "border-blue-400"
+                              : "border-violet-500"
                     )} />
                     {ev.kind === "check_in" ? (
                       <div className="space-y-2">
@@ -698,6 +704,66 @@ export function AttendanceDayDetailView({
                           GPS was outside the site radius during this window.
                         </p>
                       </div>
+                    ) : ev.kind === "overtime" ? (
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                          Overtime
+                          {" "}
+                          <span className={cn(
+                            "ml-1 rounded px-1 py-0.5 text-[10px] font-medium",
+                            (ev as unknown as { status: string }).status === "approved"
+                              ? "bg-emerald-500/15 text-emerald-400"
+                              : (ev as unknown as { status: string }).status === "rejected"
+                                ? "bg-red-500/15 text-red-400"
+                                : "bg-amber-500/15 text-amber-400"
+                          )}>
+                            {(ev as unknown as { status: string }).status}
+                          </span>
+                        </p>
+                        {(ev as unknown as { siteName?: string | null }).siteName ? (
+                          <p className="text-sm font-medium text-zinc-200">
+                            {(ev as unknown as { siteName: string }).siteName}
+                          </p>
+                        ) : null}
+                        <p className="text-xs text-zinc-500">
+                          {fmtLocal(ev.atMs, displayTz, mode)}
+                          {(ev as unknown as { endMs?: number | null }).endMs
+                            ? <> → {fmtLocal((ev as unknown as { endMs: number }).endMs, displayTz, mode)}</>
+                            : " — check-out pending"}
+                        </p>
+                        {(ev as unknown as { reason?: string }).reason ? (
+                          <p className="text-[10px] text-zinc-400">{(ev as unknown as { reason: string }).reason}</p>
+                        ) : null}
+                      </div>
+                    ) : ev.kind === "offsite" ? (
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400">
+                          Offsite work
+                          {" "}
+                          <span className={cn(
+                            "ml-1 rounded px-1 py-0.5 text-[10px] font-medium",
+                            (ev as unknown as { status: string }).status === "approved"
+                              ? "bg-emerald-500/15 text-emerald-400"
+                              : (ev as unknown as { status: string }).status === "rejected"
+                                ? "bg-red-500/15 text-red-400"
+                                : "bg-blue-500/15 text-blue-400"
+                          )}>
+                            {(ev as unknown as { status: string }).status}
+                          </span>
+                        </p>
+                        <p className="text-xs text-zinc-500">
+                          {fmtLocal(ev.atMs, displayTz, mode)}
+                          {" → "}
+                          {fmtLocal((ev as unknown as { endMs: number }).endMs, displayTz, mode)}
+                          {" "}
+                          <span className="text-zinc-400">
+                            ({fmtDuration((ev as unknown as { durationMs: number }).durationMs)})
+                          </span>
+                        </p>
+                        {(ev as unknown as { reason?: string }).reason ? (
+                          <p className="text-[10px] text-zinc-400">{(ev as unknown as { reason: string }).reason}</p>
+                        ) : null}
+                      </div>
                     ) : (
                       <div className="space-y-2">
                         <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
@@ -708,6 +774,13 @@ export function AttendanceDayDetailView({
                           of day
                         </p>
                         <p className="font-mono text-xs text-zinc-500">{fmtLocal(ev.atMs, displayTz, mode)}</p>
+                        {(ev as { auto?: boolean }).auto &&
+                        typeof (ev as { photoUrl?: string | null }).photoUrl !== "string" ? (
+                          <p className="text-[10px] text-zinc-500">
+                            Scheduled shift end after the check-out window closed — same instant used for
+                            credited hours; Firestore may update when sync runs.
+                          </p>
+                        ) : null}
                         {typeof (ev as { photoUrl?: string }).photoUrl === "string" &&
                         !(ev as { auto?: boolean }).auto ? (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -750,17 +823,19 @@ export function AttendanceDayDetailView({
                     <dd className="font-mono text-xs text-zinc-500">{fmtLocal(data.checkOut.atMs, displayTz, mode)}</dd>
                   </>
                 ) : (() => {
-                  // Check if a synthetic auto-checkout was injected into the timeline.
-                  const synth = data.timeline.find(
-                    (e) => e.kind === "check_out" && (e as { auto?: boolean }).auto === true
-                  ) as { atMs: number } | undefined;
-                  return synth ? (
+                  const provisional = data.timeline.find(
+                    (e) =>
+                      e.kind === "check_out" &&
+                      (e as { auto?: boolean }).auto === true
+                  ) as { atMs: number; siteName?: string } | undefined;
+                  return provisional ? (
                     <>
                       <dd className="font-medium text-amber-700 dark:text-amber-300">
-                        Auto check-out
-                        <span className="ml-2 text-xs text-amber-500/80">(pending)</span>
+                        {String(provisional.siteName ?? "?")}
+                        <span className="ml-2 text-xs text-amber-400">auto</span>
+                        <span className="ml-2 text-xs font-normal text-zinc-500">(pending Firestore)</span>
                       </dd>
-                      <dd className="font-mono text-xs text-zinc-500">{fmtLocal(synth.atMs, displayTz, mode)}</dd>
+                      <dd className="font-mono text-xs text-zinc-500">{fmtLocal(provisional.atMs, displayTz, mode)}</dd>
                     </>
                   ) : (
                     <>

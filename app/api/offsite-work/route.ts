@@ -13,7 +13,7 @@ const utcHm = z
   .string()
   .regex(
     /^([01]\d|2[0-3]):[0-5]\d$/,
-    "Use HH:mm on a 24-hour clock (Nepal NPT wall time in API)"
+    "Use HH:mm on a 24-hour clock (local wall time in API)"
   );
 
 const dateRe = /^\d{4}-\d{2}-\d{2}$/;
@@ -105,7 +105,7 @@ export async function POST(req: Request) {
       title: "New off-site work request",
       body: `${workerLabel} requested off-site work for ${parsed.data.date} (${parsed.data.workStartHm}–${parsed.data.workEndHm}). Reason: ${parsed.data.reason.slice(0, 120)}`,
       kind: "offsite_request",
-      link: "/dashboard/admin/offsite-work",
+      link: "/dashboard/admin/offsite",
     });
   } catch { /* non-critical */ }
 

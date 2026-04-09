@@ -30,14 +30,22 @@ import { SiteSelectWithCustomRow } from "@/components/client/site-select-with-cu
 import { Skeleton } from "@/components/ui/skeleton";
 import { calendarDateKeyInTimeZone } from "@/lib/date/calendar-day-key";
 import { normalizeTimeZoneId } from "@/lib/date/time-zone";
+import { scheduleZoneForSite } from "@/lib/site/site-schedule-zone";
+import { computeWorkWindow, type WorkWindow } from "@/lib/site/work-window";
+import { DateTime } from "luxon";
 import { cn } from "@/lib/utils";
 
 import Link from "next/link";
 
-type Site = { id: string; name?: string; workdayStartUtc?: string; workdayEndUtc?: string };
-
-/** null = no window configured, 'early' = before shift, 'open' = within shift, 'late' = after shift */
-type WorkWindow = "early" | "open" | "late" | null;
+type Site = {
+  id: string;
+  name?: string;
+  workdayStartUtc?: string;
+  workdayEndUtc?: string;
+  /** Legacy field; treated like end of shift when `workdayEndUtc` is absent */
+  autoCheckoutUtc?: string;
+  scheduleTimeZone?: string;
+};
 
 type RadiusErr = { distanceM: number; radiusM: number };
 
@@ -99,12 +107,16 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
   } | null>(null);
   const [radiusError, setRadiusError] = React.useState<RadiusErr | null>(null);
   const [workWindow, setWorkWindow] = React.useState<WorkWindow>(null);
-  const [minutesOff, setMinutesOff] = React.useState(0); // how early (negative) or late (positive) in minutes
+  const workWindowRef = React.useRef<WorkWindow>(null);
+  workWindowRef.current = workWindow;
+  const [workWindowTimes, setWorkWindowTimes] = React.useState<{ start12h: string | null; end12h: string | null }>({
+    start12h: null,
+    end12h: null,
+  });
   const [busy, setBusy] = React.useState(false);
   const [done, setDone] = React.useState(false);
   const camRef = React.useRef<CameraCaptureHandle>(null);
   const displayTz = normalizeTimeZoneId(user?.timeZone);
-
   const authHeaders = React.useCallback(async () => {
     const auth = getFirebaseAuth();
     const u = auth.currentUser;
@@ -178,6 +190,7 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
     setStep(0);
     setGps(null);
     setStreamReady(false);
+    setRadiusError(null);
   }, []);
 
   useResetCaptureWhenSiteChanges(siteId, resetCaptureFlow);
@@ -238,74 +251,63 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
     });
   }, [sites, assignmentFilterIds]);
 
-  // Helper: convert a site's "HH:MM NPT" wall-clock string to epoch ms for that time today.
-  // Uses a fake-UTC trick to derive the exact TZ offset — avoids the Intl hour:24 midnight bug.
-  const wallHmToMs = React.useCallback((hm: string): number | null => {
-    const match = /^(\d{2}):(\d{2})$/.exec(hm);
+  /** Format a site HH:mm wall-clock value as 12-hour text in that site's schedule zone. */
+  const wallHmTo12hScheduleZone = React.useCallback((hm: string, zone: string): string | null => {
+    const match = /^(\d{1,2}):(\d{2})$/.exec(hm.trim());
     if (!match) return null;
-    const targetH = Number(match[1]);
-    const targetM = Number(match[2]);
+    const h = Number(match[1]);
+    const m = Number(match[2]);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
     try {
-      const now = new Date();
-      // Get all date+time components for "now" in the user's display TZ.
-      const fmt = new Intl.DateTimeFormat("en-CA", {
-        timeZone: displayTz,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-      });
-      const parts = fmt.formatToParts(now);
-      const get = (type: string) =>
-        Number(parts.find((x) => x.type === type)?.value ?? 0);
-      const y  = get("year");
-      const mo = get("month");
-      const d  = get("day");
-      const lh = get("hour") % 24; // hour12:false can return 24 at midnight — clamp it
-      const lm = get("minute");
-      const ls = get("second");
-      // "Fake UTC" timestamp: treat the local wall-clock reading AS IF it were UTC.
-      const fakeNowUtcMs = Date.UTC(y, mo - 1, d, lh, lm, ls);
-      // Actual TZ offset (positive east of UTC, e.g. +5:45 for NPT = 20700000 ms)
-      const tzOffsetMs = fakeNowUtcMs - now.getTime();
-      // Target epoch: today in displayTz at targetH:targetM, converted to UTC
-      return Date.UTC(y, mo - 1, d, targetH, targetM, 0) - tzOffsetMs;
+      return DateTime.fromObject(
+        { hour: h, minute: m, second: 0, millisecond: 0 },
+        { zone }
+      ).toFormat("h:mm a");
     } catch {
       return null;
     }
-  }, [displayTz]);
+  }, []);
 
-  // Evaluate work window status whenever site or time changes (re-checks every 60s)
-  React.useEffect(() => {
+  // Evaluate work window before paint so auto-open camera cannot run while workWindow is still stale.
+  React.useLayoutEffect(() => {
     const evaluate = () => {
-      if (!siteId) { setWorkWindow(null); return; }
-      const site = sites.find((s) => s.id === siteId);
-      const startMs = site?.workdayStartUtc ? wallHmToMs(site.workdayStartUtc) : null;
-      const endMs   = site?.workdayEndUtc   ? wallHmToMs(site.workdayEndUtc)   : null;
-      const now = Date.now();
-
-      if (endMs != null && now >= endMs) {
-        setWorkWindow("late");
-        setMinutesOff(Math.round((now - endMs) / 60_000));
-      } else if (startMs != null && now < startMs) {
-        setWorkWindow("early");
-        setMinutesOff(Math.round((startMs - now) / 60_000));
-      } else if (startMs != null || endMs != null) {
-        setWorkWindow("open");
-        setMinutesOff(0);
-      } else {
-        // No window configured — allow freely
+      if (!siteId) {
         setWorkWindow(null);
-        setMinutesOff(0);
+        setWorkWindowTimes({ start12h: null, end12h: null });
+        return;
       }
+      const site = sites.find((s) => s.id === siteId);
+      const zone = scheduleZoneForSite(site);
+      const endHmForWindow =
+        (typeof site?.workdayEndUtc === "string" && site.workdayEndUtc.trim()
+          ? site.workdayEndUtc.trim()
+          : null) ??
+        (typeof site?.autoCheckoutUtc === "string" && site.autoCheckoutUtc.trim()
+          ? site.autoCheckoutUtc.trim()
+          : null);
+      const start12h = site?.workdayStartUtc ? wallHmTo12hScheduleZone(site.workdayStartUtc, zone) : null;
+      const end12h = endHmForWindow ? wallHmTo12hScheduleZone(endHmForWindow, zone) : null;
+      setWorkWindowTimes({ start12h, end12h });
+      setWorkWindow(
+        computeWorkWindow({
+          workdayStartUtc: site?.workdayStartUtc,
+          workdayEndUtc: endHmForWindow,
+          scheduleZone: zone,
+          nowMs: Date.now(),
+        })
+      );
     };
     evaluate();
     const t = window.setInterval(evaluate, 60_000);
     return () => window.clearInterval(t);
-  }, [siteId, sites, wallHmToMs]);
+  }, [siteId, sites, wallHmTo12hScheduleZone]);
+
+  /** If the clock moves into early/late while the user is mid-flow, stop and reset so submit cannot slip through. */
+  React.useEffect(() => {
+    if (done) return;
+    if (workWindow !== "early" && workWindow !== "late" && workWindow !== "missed_check_in") return;
+    resetCaptureFlow();
+  }, [workWindow, done, resetCaptureFlow]);
 
   const assignmentMismatch =
     assignmentFilterIds !== null &&
@@ -331,6 +333,17 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
 
   const submitCheckIn = async () => {
     if (!siteId || !gps || !selfie) return;
+    const w = workWindowRef.current;
+    if (w === "early" || w === "late" || w === "missed_check_in") {
+      toast.error(
+        w === "early"
+          ? "Check-in opens 15 minutes before shift start through 15 minutes after start, or use an overtime request."
+          : w === "missed_check_in"
+            ? "You missed the regular check-in window — use an overtime request or contact your admin."
+            : "Regular check-in is not allowed after working hours — use an overtime request."
+      );
+      return;
+    }
     setBusy(true);
     try {
       const photoUrl = await uploadSelfie(selfie);
@@ -406,8 +419,10 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
   };
 
   const startCaptureFlow = React.useCallback(async () => {
-    setRadiusError(null);
+    const w = workWindowRef.current;
+    if (w === "early" || w === "late" || w === "missed_check_in") return;
     if (!siteId || busy || step !== 0 || done) return;
+    setRadiusError(null);
     setStreamReady(false);
     const cam = camRef.current;
     if (!cam) {
@@ -429,8 +444,11 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
 
   React.useEffect(() => {
     if (!siteId) return;
+    if (!sites.some((s) => s.id === siteId)) return;
+    const w = workWindowRef.current;
+    if (w === "early" || w === "late" || w === "missed_check_in") return;
     void startCaptureFlow();
-  }, [siteId, startCaptureFlow]);
+  }, [siteId, sites, workWindow, startCaptureFlow]);
 
   const onPrimaryClick = async () => {
     setRadiusError(null);
@@ -474,6 +492,8 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
     busy ||
     done ||
     workWindow === "late" ||
+    workWindow === "missed_check_in" ||
+    workWindow === "early" ||
     (step === 0 && !siteId) ||
     (step === 1 && !streamReady) ||
     (step === 2 && (!gps || !selfie));
@@ -563,7 +583,7 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
         </div>
 
         {/* Work window warning — full-screen portal modal when outside the site's working hours */}
-        {(workWindow === "late" || workWindow === "early") && !done
+        {(workWindow === "late" || workWindow === "missed_check_in" || workWindow === "early") && !done
           ? createPortal(
               <div
                 className="fixed inset-0 z-[8000] flex items-center justify-center p-4 sm:p-6 bg-black/75 backdrop-blur-md"
@@ -575,7 +595,7 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
                   aria-modal="true"
                   className={cn(
                     "relative w-full max-w-lg overflow-hidden rounded-2xl border-2 p-6 shadow-2xl ring-1",
-                    workWindow === "late"
+                    workWindow === "late" || workWindow === "missed_check_in"
                       ? "border-red-500/50 bg-gradient-to-b from-zinc-900/98 to-red-950/95 shadow-[0_0_60px_-12px_rgba(239,68,68,0.65)] ring-red-400/25"
                       : "border-amber-500/50 bg-gradient-to-b from-zinc-900/98 to-amber-950/95 shadow-[0_0_60px_-12px_rgba(251,191,36,0.5)] ring-amber-400/25"
                   )}
@@ -595,7 +615,7 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
                     <div
                       className={cn(
                         "flex size-16 shrink-0 items-center justify-center rounded-full text-white shadow-lg ring-4",
-                        workWindow === "late"
+                        workWindow === "late" || workWindow === "missed_check_in"
                           ? "bg-red-600 shadow-[0_0_28px_-4px_rgba(239,68,68,0.95)] ring-red-500/40"
                           : "bg-amber-500 shadow-[0_0_28px_-4px_rgba(251,191,36,0.9)] ring-amber-400/40"
                       )}
@@ -610,15 +630,38 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
                             Site working hours have ended
                           </h2>
                           <p className="mt-3 text-sm leading-relaxed text-red-100/90">
-                            You are{" "}
-                            <strong className="font-semibold text-white">
-                              {minutesOff >= 60
-                                ? `${Math.floor(minutesOff / 60)}h ${minutesOff % 60}m`
-                                : `${minutesOff}m`}
-                            </strong>{" "}
-                            past the site&apos;s scheduled end time. Regular check-in is
-                            not allowed after hours — submit an overtime request to
-                            record attendance.
+                            {workWindowTimes.end12h ? (
+                              <>
+                                Work ended at{" "}
+                                <strong className="font-semibold text-white">
+                                  {workWindowTimes.end12h}
+                                </strong>
+                                . Regular check-in is not allowed after hours — submit an overtime request to
+                                record attendance.
+                              </>
+                            ) : (
+                              <>Regular check-in is not allowed after hours — submit an overtime request to record attendance.</>
+                            )}
+                          </p>
+                        </>
+                      ) : workWindow === "missed_check_in" ? (
+                        <>
+                          <h2 className="text-xl font-semibold tracking-tight text-red-50">
+                            Check-in window closed
+                          </h2>
+                          <p className="mt-3 text-sm leading-relaxed text-red-100/90">
+                            {workWindowTimes.start12h ? (
+                              <>
+                                Regular check-in was only open from 15 minutes before through 15 minutes after{" "}
+                                <strong className="font-semibold text-white">{workWindowTimes.start12h}</strong>.
+                                Submit an overtime request or contact your admin.
+                              </>
+                            ) : (
+                              <>
+                                Regular check-in was only open for 30 minutes around shift start (15 minutes
+                                before and after). Submit an overtime request or contact your admin.
+                              </>
+                            )}
                           </p>
                         </>
                       ) : (
@@ -627,14 +670,18 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
                             You are too early
                           </h2>
                           <p className="mt-3 text-sm leading-relaxed text-amber-100/90">
-                            The site&apos;s shift hasn&apos;t started yet.{" "}
-                            <strong className="font-semibold text-white">
-                              {minutesOff >= 60
-                                ? `${Math.floor(minutesOff / 60)}h ${minutesOff % 60}m`
-                                : `${minutesOff}m`}
-                            </strong>{" "}
-                            remaining before the site opens. Wait for the shift to
-                            start, or request overtime if you need to begin early.
+                            {workWindowTimes.start12h ? (
+                              <>
+                                Work starts at{" "}
+                                <strong className="font-semibold text-white">
+                                  {workWindowTimes.start12h}
+                                </strong>
+                                . Check-in opens 15 minutes before through 15 minutes after start, or submit an
+                                overtime request to begin earlier.
+                              </>
+                            ) : (
+                              <>The shift hasn&apos;t started yet. Wait for the shift to start, or request overtime if you need to begin early.</>
+                            )}
                           </p>
                         </>
                       )}
@@ -644,7 +691,7 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
                           href="/dashboard/employee/overtime"
                           className={cn(
                             "inline-flex min-w-[140px] items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold hover:opacity-90",
-                            workWindow === "late"
+                            workWindow === "late" || workWindow === "missed_check_in"
                               ? "bg-red-600 text-white hover:bg-red-500"
                               : "bg-amber-500 text-black hover:bg-amber-400"
                           )}

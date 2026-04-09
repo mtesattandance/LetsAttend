@@ -326,13 +326,13 @@ export default function AdminOffsitePage() {
                           {r.assigneeAdminName ?? r.assigneeAdminEmail ?? r.assigneeAdminUid ?? "—"}
                         </div>
                         <div>
-                          <span className="text-zinc-500">Requested window (NPT): </span>
+                          <span className="text-zinc-500">Requested window (local): </span>
                           {formatWallHm12h(r.requestedStartHm ?? "—")} →{" "}
                           {formatWallHm12h(r.requestedEndHm ?? "—")}
                         </div>
                         {r.status === "approved" && r.approvedStartHm && r.approvedEndHm ? (
                           <div>
-                            <span className="text-zinc-500">Approved window (NPT): </span>
+                            <span className="text-zinc-500">Approved window (local): </span>
                             {formatWallHm12h(r.approvedStartHm)} → {formatWallHm12h(r.approvedEndHm)}
                           </div>
                         ) : null}
@@ -362,7 +362,7 @@ export default function AdminOffsitePage() {
 
                       {r.status === "pending" ? (
                         <div className="mt-3 space-y-3 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] p-3">
-                          <p className="text-xs font-medium text-cyan-200/90">Edit before approve (NPT)</p>
+                          <p className="text-xs font-medium text-cyan-200/90">Edit before approve (local)</p>
                           <div className="grid gap-3 sm:grid-cols-2">
                             <UtcTimePicker
                               id={`${r.id}-ap-s`}

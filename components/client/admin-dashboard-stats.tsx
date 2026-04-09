@@ -194,7 +194,7 @@ export function AdminDashboardStats() {
       <Card>
         <CardHeader>
           <CardTitle>Late arrivals</CardTitle>
-          <CardDescription>Dev threshold: after 09:00 NPT</CardDescription>
+          <CardDescription>Dev threshold: after 09:00 local</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-semibold">{statSlot(s.lateArrivals)}</div>

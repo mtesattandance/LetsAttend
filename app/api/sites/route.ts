@@ -3,6 +3,8 @@ import { z } from "zod";
 import { FieldValue, adminDb } from "@/lib/firebase/admin";
 import { requireBearerUser } from "@/lib/auth/verify-request";
 import { jsonError } from "@/lib/api/json-error";
+import { resolveSiteScheduleTimeZone } from "@/lib/server/site-schedule-time-zone";
+import { DEFAULT_CHECKOUT_GRACE_MINUTES } from "@/lib/site/work-window";
 
 export const runtime = "nodejs";
 
@@ -10,7 +12,7 @@ const utcHm = z
   .string()
   .regex(
     /^([01]\d|2[0-3]):[0-5]\d$/,
-    "Use HH:mm on a 24-hour clock (e.g. 09:00 or 21:00), Nepal NPT — the UI uses AM/PM"
+    "Use HH:mm on a 24-hour clock (e.g. 09:00 or 21:00), local to the site — the UI uses AM/PM"
   );
 
 const postBodySchema = z.object({
@@ -52,16 +54,23 @@ export async function POST(req: Request) {
 
   const ref = db.collection("sites").doc();
   const now = FieldValue.serverTimestamp();
+  const scheduleTimeZone = resolveSiteScheduleTimeZone({
+    latitude: parsed.data.latitude,
+    longitude: parsed.data.longitude,
+  });
   await ref.set({
     name: parsed.data.name.trim(),
     latitude: parsed.data.latitude,
     longitude: parsed.data.longitude,
     radius: parsed.data.radius,
+    scheduleTimeZone,
     ...(parsed.data.workdayStartUtc
       ? { workdayStartUtc: parsed.data.workdayStartUtc }
       : {}),
-    workdayEndUtc: parsed.data.workdayEndUtc ?? "17:00",
-    checkoutGraceMinutes: parsed.data.checkoutGraceMinutes ?? 20,
+    ...(parsed.data.workdayEndUtc
+      ? { workdayEndUtc: parsed.data.workdayEndUtc }
+      : {}),
+    checkoutGraceMinutes: parsed.data.checkoutGraceMinutes ?? DEFAULT_CHECKOUT_GRACE_MINUTES,
     createdBy: uid,
     createdByEmail: email ?? null,
     workerCreated: role === "employee",
@@ -88,10 +97,14 @@ export async function GET(req: Request) {
   const assigned: string[] = userSnap.get("assignedSites") ?? [];
 
   const sitesSnap = await db.collection("sites").get();
-  const all = sitesSnap.docs.map((d) => ({
-    id: d.id,
-    ...d.data(),
-  }));
+  const all = sitesSnap.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      ...data,
+      scheduleTimeZone: resolveSiteScheduleTimeZone(data),
+    };
+  });
 
   if (role === "employee") {
     // Full site list for pickers. If `assignedSites` is non-empty, check-in API restricts to those ids;

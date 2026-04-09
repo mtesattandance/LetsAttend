@@ -6,7 +6,7 @@ import { requireBearerUser } from "@/lib/auth/verify-request";
 import { jsonError } from "@/lib/api/json-error";
 import { haversineMeters } from "@/lib/geo/haversine";
 import { isSuperAdminDecoded, isSuperAdminUserRow } from "@/lib/auth/super-admin";
-import { DEFAULT_ATTENDANCE_TIME_ZONE } from "@/lib/date/time-zone";
+import { timeZoneFromUserSnapshot } from "@/lib/attendance/time-zone-from-snap";
 
 export const runtime = "nodejs";
 
@@ -85,6 +85,7 @@ export async function GET(req: Request) {
   }
 
   const db = adminDb();
+  const viewerTz = timeZoneFromUserSnapshot(await db.collection("users").doc(decoded.uid).get());
 
   const siteIdParam = new URL(req.url).searchParams.get("siteId")?.trim() ?? "";
   let siteFilter: { latitude: number; longitude: number; radius: number } | null = null;
@@ -173,10 +174,8 @@ export async function GET(req: Request) {
     workers = await filterOutSuperAdminWorkers(db, workers);
   }
 
-  /** Today (calendar day) in attendance zone — off-site request GPS for this day only. */
-  const todayKey = DateTime.now()
-    .setZone(DEFAULT_ATTENDANCE_TIME_ZONE)
-    .toFormat("yyyy-MM-dd");
+  /** Today (calendar day) in viewer’s profile zone — off-site request GPS for this day only. */
+  const todayKey = DateTime.now().setZone(viewerTz).toFormat("yyyy-MM-dd");
   const offsiteSnap = await db
     .collection("offsiteWorkRequests")
     .where("date", "==", todayKey)

@@ -20,7 +20,7 @@ function hmMinutes(hm: string): number {
 const patchSchema = z.object({
   status: z.enum(["approved", "rejected", "pending"]),
   note: z.string().max(1000).optional(),
-  /** Final working hours (NPT wall). Defaults to employee-requested times when approving. */
+  /** Final working hours (local wall clock). Defaults to employee-requested times when approving. */
   approvedStartHm: utcHm.optional(),
   approvedEndHm: utcHm.optional(),
 });
@@ -98,7 +98,7 @@ export async function PATCH(
             ? `Your off-site work request for ${existing.date ?? ""} was rejected. Note: ${parsed.data.note.slice(0, 200)}`
             : `Your off-site work request for ${existing.date ?? ""} was rejected.`,
           kind: "offsite_rejected",
-          link: "/dashboard/employee/offsite-work",
+          link: "/dashboard/employee/offsite",
         });
       } catch { /* non-critical */ }
     }

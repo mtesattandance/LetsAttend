@@ -12,7 +12,7 @@ export function parseUtcHm(s: string): { h: number; m: number } | null {
 
 /**
  * @deprecated Prefer {@link zonedWallClockToUtcMillis} with an explicit zone.
- * Interprets `dayKey` + `hh:mm` in {@link DEFAULT_ATTENDANCE_TIME_ZONE} (Nepal).
+ * Interprets `dayKey` + `hh:mm` in {@link DEFAULT_ATTENDANCE_TIME_ZONE} (fallback when no zone is passed).
  */
 export function utcMillisForDayAndHm(dayKey: string, hhmm: string): number | null {
   return zonedWallClockToUtcMillis(dayKey, hhmm, DEFAULT_ATTENDANCE_TIME_ZONE);

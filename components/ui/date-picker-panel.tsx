@@ -143,7 +143,7 @@ function bsYearMonthFromAnchor(anchorIso: string): { bsYear: number; bsMonth: nu
 export type DatePickerPanelProps = {
   selectedIso: string;
   onSelect: (iso: string) => void;
-  /** IANA zone for “Today” and month grid; defaults to app default (e.g. Kathmandu). */
+  /** IANA zone for “Today” and month grid; defaults to app fallback zone when omitted. */
   timeZone?: string;
   className?: string;
 };

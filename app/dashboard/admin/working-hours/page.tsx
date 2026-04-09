@@ -21,6 +21,7 @@ import { WorkingHoursMonthPanel } from "@/components/client/working-hours-month-
 import { Button } from "@/components/ui/button";
 import { useCalendarMode } from "@/components/client/calendar-mode-context";
 import { monthLabelForModeYm, formatIsoForCalendar, currentMonthYyyyMmForMode, convertMonthMode, adIsoToBsIso } from "@/lib/date/bs-calendar";
+import { DEFAULT_ATTENDANCE_TIME_ZONE } from "@/lib/date/time-zone";
 import { toast } from "sonner";
 
 type UserRow = {
@@ -42,6 +43,7 @@ type HoursPayload = {
     outTime: string;
     dutyHours: number;
     workPlace: string;
+    schedule: string;
     remark: string;
   }[];
   worker: { id: string; employeeId: string | null; name: string | null; designation: string | null };
@@ -64,11 +66,11 @@ export default function AdminWorkingHoursPage() {
   const [periodOpen, setPeriodOpen] = React.useState(false);
   const [periodMode, setPeriodMode] = React.useState<"year" | "range">("year");
   const [periodYear, setPeriodYear] = React.useState(() => {
-    const current = currentMonthYyyyMmForMode("ad", "Asia/Kathmandu");
+    const current = currentMonthYyyyMmForMode("ad", DEFAULT_ATTENDANCE_TIME_ZONE);
     return Number(current.split("-")[0]) || DateTime.now().year;
   });
-  const [periodStartMonth, setPeriodStartMonth] = React.useState(() => currentMonthYyyyMmForMode("ad", "Asia/Kathmandu"));
-  const [periodEndMonth, setPeriodEndMonth] = React.useState(() => currentMonthYyyyMmForMode("ad", "Asia/Kathmandu"));
+  const [periodStartMonth, setPeriodStartMonth] = React.useState(() => currentMonthYyyyMmForMode("ad", DEFAULT_ATTENDANCE_TIME_ZONE));
+  const [periodEndMonth, setPeriodEndMonth] = React.useState(() => currentMonthYyyyMmForMode("ad", DEFAULT_ATTENDANCE_TIME_ZONE));
   const [downloadingAll, setDownloadingAll] = React.useState(false);
   const [downloadStatus, setDownloadStatus] = React.useState("Waiting to start...");
   const [downloadCurrentEmployee, setDownloadCurrentEmployee] = React.useState("");
@@ -86,8 +88,8 @@ export default function AdminWorkingHoursPage() {
   const prevModeRef = React.useRef(mode);
   React.useEffect(() => {
     if (!mounted) {
-       setPeriodStartMonth(currentMonthYyyyMmForMode(mode, "Asia/Kathmandu"));
-       setPeriodEndMonth(currentMonthYyyyMmForMode(mode, "Asia/Kathmandu"));
+       setPeriodStartMonth(currentMonthYyyyMmForMode(mode, DEFAULT_ATTENDANCE_TIME_ZONE));
+       setPeriodEndMonth(currentMonthYyyyMmForMode(mode, DEFAULT_ATTENDANCE_TIME_ZONE));
        prevModeRef.current = mode;
        return;
     }
@@ -234,7 +236,19 @@ export default function AdminWorkingHoursPage() {
         const startY = drawHeader(monthLabel);
         autoTable(doc, {
           startY,
-          head: [["Date", "Day", "Type", "In Time", "Out Time", "Duty Hours", "Work Place", "Remark"]],
+          head: [
+            [
+              "Date",
+              "Day",
+              "Type",
+              "In Time",
+              "Out Time",
+              "Duty Hours",
+              "Work Place",
+              "Schedule",
+              "Remark",
+            ],
+          ],
           body: p.entries.map((r) => [
             mode === "bs" ? formatIsoForCalendar(r.day, "bs", p.zone) : r.day,
             DateTime.fromISO(r.day, { zone: p.zone }).toFormat("ccc"),
@@ -243,6 +257,7 @@ export default function AdminWorkingHoursPage() {
             r.outTime,
             r.dutyHours.toFixed(2),
             r.workPlace,
+            r.schedule || "—",
             r.remark || "-",
           ]),
           foot: [[
@@ -253,6 +268,7 @@ export default function AdminWorkingHoursPage() {
             "",
             p.totalHours.toFixed(2),
             `On-site ${p.onSiteSessionHours.toFixed(2)} | OT ${p.approvedClockOvertimeHours.toFixed(2)} | Off-site ${p.approvedOffsiteHours.toFixed(2)}`,
+            "",
             "",
           ]],
           styles: { fontSize: 8, cellPadding: 4.2 },

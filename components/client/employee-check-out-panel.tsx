@@ -24,20 +24,36 @@ import { getFirebaseAuth } from "@/lib/firebase/client";
 import { SiteSelectWithCustomRow } from "@/components/client/site-select-with-custom-row";
 import { calendarDateKeyInTimeZone } from "@/lib/date/calendar-day-key";
 import { normalizeTimeZoneId } from "@/lib/date/time-zone";
+import { from24hUtc } from "@/lib/time/utc-12h";
 
 type Site = { id: string; name?: string };
 
 type RadiusErr = { distanceM: number; radiusM: number };
 
 type FlowStep = 0 | 1 | 2;
+type CheckoutWindowState = "no_schedule" | "too_early" | "open" | "too_late";
+
 type TodayPayload = {
   siteId: string | null;
   checkIn: { atMs: number | null } | null;
   checkOut: { atMs: number | null } | null;
+  workdayEndUtc?: string | null;
+  checkoutGraceMinutes?: number | null;
+  checkoutWindowState?: CheckoutWindowState | null;
   error?: string;
 };
 
-export function EmployeeCheckOutPanel({ proxyForUid }: { proxyForUid?: string } = {}) {
+function fmtWallHm12h(hm: string | null): string | null {
+  if (!hm || !/^([01]\d|2[0-3]):[0-5]\d$/.test(hm.trim())) return null;
+  const { h12, m, ap } = from24hUtc(hm.trim());
+  return `${h12}:${String(m).padStart(2, "0")} ${ap}`;
+}
+
+export function EmployeeCheckOutPanel({
+  proxyForUid,
+}: {
+  proxyForUid?: string;
+} = {}) {
   const [sites, setSites] = React.useState<Site[]>([]);
   const [siteId, setSiteId] = React.useState("");
   const [gps, setGps] = React.useState<GpsResult | null>(null);
@@ -49,6 +65,11 @@ export function EmployeeCheckOutPanel({ proxyForUid }: { proxyForUid?: string } 
   const [busy, setBusy] = React.useState(false);
   const camRef = React.useRef<CameraCaptureHandle>(null);
   const [activeSiteId, setActiveSiteId] = React.useState<string | null>(null);
+  const [checkoutGate, setCheckoutGate] = React.useState<"ok" | "too_early" | "too_late" | "none">("none");
+  const [checkoutHint, setCheckoutHint] = React.useState<{
+    workdayEndUtc: string | null;
+    checkoutGraceMinutes: number;
+  } | null>(null);
   const displayTz = normalizeTimeZoneId(undefined);
 
   const authHeaders = React.useCallback(async () => {
@@ -86,34 +107,55 @@ export function EmployeeCheckOutPanel({ proxyForUid }: { proxyForUid?: string } 
     };
   }, [loadSites]);
 
-  React.useEffect(() => {
-    if (proxyForUid) return;
-    let cancelled = false;
-    const run = async () => {
-      try {
-        const auth = getFirebaseAuth();
-        const u = auth.currentUser;
-        if (!u) return;
-        const token = await u.getIdToken();
-        const day = calendarDateKeyInTimeZone(new Date(), displayTz);
-        const res = await fetch(`/api/attendance/today?day=${encodeURIComponent(day)}`, {
-          headers: { Authorization: `Bearer ${token}` },
+  const fetchActiveSession = React.useCallback(async () => {
+    try {
+      const auth = getFirebaseAuth();
+      const u = auth.currentUser;
+      if (!u) return;
+      const token = await u.getIdToken();
+      const day = calendarDateKeyInTimeZone(new Date(), displayTz);
+      const qs = new URLSearchParams({ day });
+      if (proxyForUid) qs.set("workerId", proxyForUid);
+      const res = await fetch(`/api/attendance/today?${qs.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = (await res.json()) as TodayPayload;
+      if (!res.ok) return;
+      const open = !!data.checkIn && !data.checkOut;
+      const sid = open ? data.siteId ?? null : null;
+      setActiveSiteId(sid);
+      if (sid) setSiteId(sid);
+      if (!open || proxyForUid) {
+        setCheckoutGate("none");
+        setCheckoutHint(null);
+      } else {
+        const st = data.checkoutWindowState;
+        const grace = typeof data.checkoutGraceMinutes === "number" ? data.checkoutGraceMinutes : 30;
+        setCheckoutHint({
+          workdayEndUtc: data.workdayEndUtc ?? null,
+          checkoutGraceMinutes: grace,
         });
-        const data = (await res.json()) as TodayPayload;
-        if (!res.ok || cancelled) return;
-        const open = !!data.checkIn && !data.checkOut;
-        const sid = open ? data.siteId ?? null : null;
-        setActiveSiteId(sid);
-        if (sid) setSiteId(sid);
-      } catch {
-        /* ignore */
+        if (st === "too_early") setCheckoutGate("too_early");
+        else if (st === "too_late") setCheckoutGate("too_late");
+        else setCheckoutGate("ok");
       }
-    };
-    void run();
-    return () => {
-      cancelled = true;
-    };
+    } catch {
+      /* ignore */
+    }
   }, [displayTz, proxyForUid]);
+
+  React.useEffect(() => {
+    void fetchActiveSession();
+    const t = window.setInterval(() => void fetchActiveSession(), 60_000);
+    return () => window.clearInterval(t);
+  }, [fetchActiveSession]);
+
+  // Re-sync when check-in completes (other panel fires this event)
+  React.useEffect(() => {
+    const handler = () => void fetchActiveSession();
+    window.addEventListener("attendance-updated", handler);
+    return () => window.removeEventListener("attendance-updated", handler);
+  }, [fetchActiveSession]);
 
   React.useEffect(() => {
     if (step === 0) setStreamReady(false);
@@ -260,10 +302,12 @@ export function EmployeeCheckOutPanel({ proxyForUid }: { proxyForUid?: string } 
     }
   };
 
+  const checkoutBlocked =
+    !proxyForUid && activeSiteId != null && checkoutGate === "too_late";
   const primaryDisabled =
     busy ||
     (step === 1 && !streamReady) ||
-    (step === 2 && (!gps || !selfie));
+    (step === 2 && (!gps || !selfie || checkoutBlocked));
 
   const primaryHint =
     step === 0
@@ -303,66 +347,85 @@ export function EmployeeCheckOutPanel({ proxyForUid }: { proxyForUid?: string } 
           selectDisabled={!!activeSiteId}
         />
 
-        <div className="space-y-2">
-          <p className="text-xs text-zinc-500">Camera</p>
-          {!selfie ? (
-            <CameraCapture
-              ref={camRef}
-              hideControls
-              onStreamReady={() => setStreamReady(true)}
-              onCapture={(url) => {
-                setSelfie(url);
-                setStep(2);
-              }}
-              onError={(err) => toast.error(err)}
-            />
-          ) : (
-            <SelfiePreviewWithRetake
-              src={selfie}
-              alt="Check-out preview"
-              onRetake={retakeSelfie}
-            />
-          )}
-        </div>
-
-        {radiusError ? (
-          <OutOfSiteRadiusAlert
-            distanceM={radiusError.distanceM}
-            radiusM={radiusError.radiusM}
-            context="check-out"
-            onDismiss={() => setRadiusError(null)}
-          />
+        {!proxyForUid && checkoutGate === "too_late" ? (
+          <p className="rounded-lg border border-red-500/35 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+            The check-out window has closed. Time on your current site is not credited until an admin corrects
+            your attendance.
+          </p>
         ) : null}
 
-        {successFeedback ? (
-          <ResultModal
-            open
-            variant="success"
-            title="Checked out"
-            description="Your work session for today is closed. Have a good rest."
-            onDismiss={() => setSuccessFeedback(false)}
-          />
-        ) : null}
-
-        <div className="flex flex-col gap-2">
+        {!proxyForUid && checkoutGate === "too_late" ? (
           <Button
             type="button"
-            variant="secondary"
-            disabled={primaryDisabled}
-            onClick={() => void onPrimaryClick()}
+            disabled
+            className="w-full cursor-not-allowed bg-red-900/60 text-red-200 opacity-80 hover:bg-red-900/60"
           >
-            {busy
-              ? step === 0
-                ? "Opening camera…"
-                : step === 1
-                  ? "Capturing…"
-                  : "Submitting…"
-              : step === 1
-                ? "Capture"
-                : "Submit check-out"}
+            Auto checkout done
           </Button>
-          <p className="text-xs text-zinc-500">{primaryHint}</p>
-        </div>
+        ) : (
+          <>
+            <div className="space-y-2">
+              <p className="text-xs text-zinc-500">Camera</p>
+              {!selfie ? (
+                <CameraCapture
+                  ref={camRef}
+                  hideControls
+                  onStreamReady={() => setStreamReady(true)}
+                  onCapture={(url) => {
+                    setSelfie(url);
+                    setStep(2);
+                  }}
+                  onError={(err) => toast.error(err)}
+                />
+              ) : (
+                <SelfiePreviewWithRetake
+                  src={selfie}
+                  alt="Check-out preview"
+                  onRetake={retakeSelfie}
+                />
+              )}
+            </div>
+
+            {radiusError ? (
+              <OutOfSiteRadiusAlert
+                distanceM={radiusError.distanceM}
+                radiusM={radiusError.radiusM}
+                context="check-out"
+                onDismiss={() => setRadiusError(null)}
+              />
+            ) : null}
+
+            {successFeedback ? (
+              <ResultModal
+                open
+                variant="success"
+                title="Checked out"
+                description="Your work session for today is closed. Have a good rest."
+                onDismiss={() => setSuccessFeedback(false)}
+              />
+            ) : null}
+
+            <div className="flex flex-col gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={primaryDisabled}
+                onClick={() => void onPrimaryClick()}
+              >
+                {busy
+                  ? step === 0
+                    ? "Opening camera…"
+                    : step === 1
+                      ? "Capturing…"
+                      : "Submitting…"
+                  : step === 1
+                    ? "Capture"
+                    : "Submit check-out"}
+              </Button>
+              <p className="text-xs text-zinc-500">{primaryHint}</p>
+            </div>
+          </>
+        )}
 
       </CardContent>
     </Card>

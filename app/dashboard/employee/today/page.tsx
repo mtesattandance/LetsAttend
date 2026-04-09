@@ -6,9 +6,8 @@ export default function EmployeeTodayPage() {
       <div className="mb-6 md:mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">Today</h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Your attendance for the current calendar day in your work time zone (matches your device: e.g.
-          India IST, Nepal NPT):
-          check-in, site switches, check-out, and site schedule hints.
+          Your attendance for the current calendar day in your work time zone (same as your device).
+          Includes check-in, site switches, check-out, and site schedule hints.
         </p>
       </div>
       <div className="mx-auto max-w-2xl">

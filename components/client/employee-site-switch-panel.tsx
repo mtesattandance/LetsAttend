@@ -29,6 +29,12 @@ import { normalizeTimeZoneId } from "@/lib/date/time-zone";
 import { cn } from "@/lib/utils";
 
 type Site = { id: string; name?: string };
+type TodayPayload = {
+  siteId: string | null;
+  checkIn: { atMs: number | null } | null;
+  checkOut: { atMs: number | null } | null;
+  error?: string;
+};
 
 type FlowStep = 0 | 1 | 2;
 type RadiusErr = { distanceM: number; radiusM: number };
@@ -116,6 +122,55 @@ export function EmployeeSiteSwitchPanel({
     const auth = getFirebaseAuth();
     const db = getFirebaseDb();
     let unsubDoc: (() => void) | undefined;
+
+    if (proxyForUid) {
+      let cancelled = false;
+      const run = async () => {
+        try {
+          const u = auth.currentUser;
+          if (!u || !proxyForUid) {
+            if (!cancelled) {
+              setSessionOpen(false);
+              setCurrentSiteId(null);
+            }
+            return;
+          }
+          const token = await u.getIdToken();
+          const day = calendarDateKeyInTimeZone(new Date(), normalizeTimeZoneId(subjectTimeZone));
+          const qs = new URLSearchParams({ day, workerId: proxyForUid });
+          const res = await fetch(`/api/attendance/today?${qs.toString()}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const data = (await res.json()) as TodayPayload;
+          if (!res.ok) {
+            if (!cancelled) {
+              setSessionOpen(false);
+              setCurrentSiteId(null);
+            }
+            return;
+          }
+          if (cancelled) return;
+          const open = !!(data.checkIn && !data.checkOut);
+          const sid = open ? data.siteId ?? null : null;
+          setSessionOpen(open);
+          setCurrentSiteId(sid);
+        } catch {
+          if (!cancelled) {
+            setSessionOpen(false);
+            setCurrentSiteId(null);
+          }
+        }
+      };
+      void run();
+      const t = window.setInterval(() => void run(), 45_000);
+      const onUpdated = () => void run();
+      window.addEventListener("attendance-updated", onUpdated);
+      return () => {
+        cancelled = true;
+        window.clearInterval(t);
+        window.removeEventListener("attendance-updated", onUpdated);
+      };
+    }
 
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       unsubDoc?.();

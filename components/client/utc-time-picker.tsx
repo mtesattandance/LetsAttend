@@ -98,7 +98,7 @@ export function UtcTimePicker({
             )}
             onClick={() => onChange("09:00")}
           >
-            Set to 9:00 AM (NPT)
+            Set to 9:00 AM (local)
           </button>
         </div>
       ) : null}
@@ -186,7 +186,7 @@ export function UtcTimePicker({
           >
             {formatWallHm12h(value.trim())}
           </span>{" "}
-          (12-hour, NPT wall time)
+          (12-hour, site local wall time)
         </p>
       ) : allowEmpty ? (
         <p
@@ -195,7 +195,7 @@ export function UtcTimePicker({
             light ? "text-zinc-600 dark:text-zinc-400" : "text-zinc-500"
           )}
         >
-          Optional — or use “Set to 9:00 AM (NPT)” to pick a time.
+          Optional — or use “Set to 9:00 AM (local)” to pick a time.
         </p>
       ) : null}
     </div>

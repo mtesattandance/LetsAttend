@@ -43,8 +43,8 @@ export async function POST(req: Request) {
 
   const row = snap.data()!;
   if (row.workerId !== uid) return jsonError("Not your overtime request", 403);
-  if (row.status !== "approved") {
-    return jsonError("Overtime must be approved before you can check in", 403);
+  if (row.status === "rejected") {
+    return jsonError("This overtime request is rejected. Create a new one to continue.", 403);
   }
 
   const todayKey = localCalendarDateKeyFromTimezoneOffset(timezoneOffset);
@@ -56,7 +56,7 @@ export async function POST(req: Request) {
   }
 
   const siteId = typeof row.siteId === "string" && row.siteId.trim() ? row.siteId.trim() : null;
-  if (!siteId) return jsonError("This request has no site — ask an admin to re-approve with a site.", 500);
+  if (!siteId) return jsonError("This request has no site. Choose a site in overtime request first.", 500);
 
   const hasIn =
     row.overtimeCheckIn &&

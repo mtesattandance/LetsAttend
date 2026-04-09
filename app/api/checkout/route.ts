@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { Timestamp } from "firebase-admin/firestore";
 import { FieldValue, adminDb } from "@/lib/firebase/admin";
 import { requireBearerUser } from "@/lib/auth/verify-request";
 import { jsonError } from "@/lib/api/json-error";
@@ -7,6 +8,9 @@ import { isWithinSiteRadius } from "@/lib/geo/validate-site";
 import { calendarDateKeyInTimeZone } from "@/lib/date/calendar-day-key";
 import { timeZoneFromUserSnapshot } from "@/lib/attendance/time-zone-from-snap";
 import { canRecordAttendanceFor } from "@/lib/attendance/proxy-attendance";
+import { computeCheckoutWindowState, DEFAULT_CHECKOUT_GRACE_MINUTES } from "@/lib/site/work-window";
+import { zonedWallClockToUtcMillis } from "@/lib/site/zoned-schedule";
+import { resolveSiteScheduleTimeZone } from "@/lib/server/site-schedule-time-zone";
 
 export const runtime = "nodejs";
 
@@ -100,9 +104,43 @@ export async function POST(req: Request) {
     return jsonError("Check-out site must match active site", 403);
   }
 
-  const now = FieldValue.serverTimestamp();
+  const scheduleZone = resolveSiteScheduleTimeZone(site);
+  const workdayEndHm =
+    (typeof site.workdayEndUtc === "string" && site.workdayEndUtc.trim()
+      ? site.workdayEndUtc.trim()
+      : null) ??
+    (typeof site.autoCheckoutUtc === "string" && site.autoCheckoutUtc.trim()
+      ? site.autoCheckoutUtc.trim()
+      : null);
+  const graceMin = Number(site.checkoutGraceMinutes);
+  const checkoutGrace =
+    Number.isFinite(graceMin) && graceMin > 0 ? graceMin : DEFAULT_CHECKOUT_GRACE_MINUTES;
+  const coState = computeCheckoutWindowState({
+    workdayEndUtc: workdayEndHm,
+    scheduleZone,
+    attendanceDay: day,
+    checkoutGraceMinutes: checkoutGrace,
+    nowMs: Date.now(),
+  });
+  if (coState === "too_late") {
+    return jsonError(
+      `Check-out window ended (${checkoutGrace} minutes after shift end). The system will auto-checkout this session.`,
+      403
+    );
+  }
+
+  let checkOutTime: Timestamp | ReturnType<typeof FieldValue.serverTimestamp>;
+  if (coState === "open" && workdayEndHm) {
+    const deadlineMs = zonedWallClockToUtcMillis(day, workdayEndHm, scheduleZone);
+    checkOutTime =
+      deadlineMs != null ? Timestamp.fromMillis(deadlineMs) : FieldValue.serverTimestamp();
+  } else {
+    checkOutTime = FieldValue.serverTimestamp();
+  }
+
+  const updatedAt = FieldValue.serverTimestamp();
   const checkOutPayload: Record<string, unknown> = {
-    time: now,
+    time: checkOutTime,
     gps: {
       latitude,
       longitude,
@@ -117,7 +155,7 @@ export async function POST(req: Request) {
   await attRef.set(
     {
       checkOut: checkOutPayload,
-      updatedAt: now,
+      updatedAt,
     },
     { merge: true }
   );

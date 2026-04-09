@@ -69,6 +69,44 @@ export function OvertimeAttendanceCapture({
     setStreamReady,
   });
 
+  /** Open camera when this request loads (same idea as work check-in after site is chosen). */
+  React.useEffect(() => {
+    setStep(0);
+    setSelfie(null);
+    setGps(null);
+    setStreamReady(false);
+    setShowSuccess(false);
+    setRadiusError(null);
+    let cancelled = false;
+    const id = window.setTimeout(() => {
+      void (async () => {
+        if (cancelled) return;
+        setRadiusError(null);
+        setStreamReady(false);
+        const cam = camRef.current;
+        if (!cam) {
+          toast.error("Camera not ready");
+          return;
+        }
+        setBusy(true);
+        try {
+          await cam.start();
+          if (!cancelled) setStep(1);
+        } catch (e) {
+          camRef.current?.stop();
+          toast.error(e instanceof Error ? e.message : "Could not open camera");
+        } finally {
+          if (!cancelled) setBusy(false);
+        }
+      })();
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id);
+      camRef.current?.stop();
+    };
+  }, [requestId, mode]);
+
   const uploadSelfie = async (dataUrl: string) => {
     const h = await authHeaders();
     const res = await fetch("/api/upload", {
@@ -141,44 +179,28 @@ export function OvertimeAttendanceCapture({
   const onPrimaryClick = async () => {
     setRadiusError(null);
 
-    if (step === 0) {
-      setStreamReady(false);
-      const cam = camRef.current;
-      if (!cam) {
-        toast.error("Camera not ready");
-        return;
-      }
-      const gpsPromise = getGpsFix();
-      setBusy(true);
-      try {
-        await cam.start();
-        setStep(1);
-      } catch (e) {
-        camRef.current?.stop();
-        toast.error(e instanceof Error ? e.message : "Could not open camera");
-        setGps(null);
-        void gpsPromise.catch(() => {});
-        return;
-      } finally {
-        setBusy(false);
-      }
-      try {
-        const g = await gpsPromise;
-        setGps(g);
-      } catch (e) {
-        camRef.current?.stop();
-        toast.error(e instanceof Error ? e.message : "Could not get location");
-        setGps(null);
-        setStep(0);
-      }
-      return;
-    }
+    if (step === 0) return;
 
     if (step === 1) {
       if (!streamReady) return;
       setBusy(true);
       try {
+        const gpsPromise = getGpsFix();
         await camRef.current?.capture();
+        const g = await gpsPromise;
+        setGps(g);
+      } catch (e) {
+        const msg = (e instanceof Error ? e.message : "").toLowerCase();
+        toast.error(
+          msg.includes("permission") || msg.includes("denied") || msg.includes("blocked")
+            ? "Location access denied — enable GPS in your browser settings."
+            : msg.includes("timeout") || msg.includes("unavailable")
+              ? "GPS signal unavailable — move to an open area and try again."
+              : e instanceof Error
+                ? e.message
+                : "Could not get your location. Make sure GPS is enabled."
+        );
+        setGps(null);
       } finally {
         setBusy(false);
       }
@@ -192,24 +214,25 @@ export function OvertimeAttendanceCapture({
 
   const primaryDisabled =
     busy ||
-    (step === 1 && (!streamReady || !gps)) ||
+    step === 0 ||
+    (step === 1 && !streamReady) ||
     (step === 2 && (!gps || !selfie));
 
   const title = mode === "check-in" ? "Overtime check-in" : "Overtime check-out";
   const hint =
     step === 0
-      ? "Tap once for location + camera."
+      ? "Camera opens automatically. Then capture selfie — GPS is taken at the same moment."
       : step === 1
-        ? "Tap again to take your selfie."
-        : "Tap again to submit.";
+        ? "Tap to capture selfie (GPS captured now)."
+        : "Tap again to send.";
 
   return (
     <Card className="border-violet-500/20 bg-violet-500/[0.03]">
       <CardHeader className="pb-2">
         <CardTitle className="text-base">{title}</CardTitle>
         <CardDescription>
-          Site: <strong className="text-zinc-200">{siteLabel}</strong> — same GPS + selfie flow as
-          normal attendance.
+          Site: <strong className="text-zinc-200">{siteLabel}</strong> — same flow as work check-in:
+          camera opens first; GPS is captured when you take the selfie; one more tap to submit.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -271,11 +294,13 @@ export function OvertimeAttendanceCapture({
                 : step === 1
                   ? "Capturing…"
                   : "Submitting…"
-              : step === 1 && !gps
-                ? "Getting location…"
-                : mode === "check-in"
-                  ? "Submit overtime check-in"
-                  : "Submit overtime check-out"}
+              : step === 0
+                ? "Preparing camera…"
+                : step === 1
+                  ? "Capture"
+                  : mode === "check-in"
+                    ? "Submit overtime check-in"
+                    : "Submit overtime check-out"}
           </Button>
           <p className="text-xs text-zinc-500">{hint}</p>
         </div>

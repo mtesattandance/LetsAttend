@@ -3,7 +3,6 @@
 import * as React from "react";
 import { Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { CheckCircle2, Clock, TimerOff, LogIn, ArrowLeftRight } from "lucide-react";
 import { toast } from "sonner";
 import { getFirebaseAuth } from "@/lib/firebase/client";
@@ -21,6 +20,7 @@ type TodayResponse = {
   checkIn: { atMs: number | null } | null;
   checkOut: { atMs: number | null } | null;
   workdayEndUtc: string | null;
+  scheduleTimeZone: string | null;
   error?: string;
 };
 
@@ -238,7 +238,8 @@ function EmployeeWorkPanelsInner() {
     }
 
     if (!checkedIn && data.workdayEndUtc) {
-      const capMs = wallHmToTodayMs(data.workdayEndUtc, tz);
+      const scheduleTz = normalizeTimeZoneId(data.scheduleTimeZone || undefined);
+      const capMs = wallHmToTodayMs(data.workdayEndUtc, scheduleTz);
       setIsPastWorkEnd(capMs != null && Date.now() >= capMs);
     } else {
       setIsPastWorkEnd(false);
