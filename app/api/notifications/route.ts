@@ -8,6 +8,10 @@ import { serializeFirestoreForJson } from "@/lib/firestore/serialize-for-json";
 
 export const runtime = "nodejs";
 
+// In-memory cache: uid → { items, expiresAt }
+const CACHE_TTL_MS = 10 * 60_000; // 10 minutes
+const notifCache = new Map<string, { items: unknown[]; expiresAt: number }>();
+
 function createdAtMs(data: Record<string, unknown>): number {
   const c = data.createdAt;
   if (c instanceof Timestamp) return c.toMillis();
@@ -19,20 +23,33 @@ export async function GET(req: Request) {
   if (!auth.ok) return auth.response;
   const { uid } = auth.decoded;
 
-  const db = adminDb();
-  /** Equality-only query avoids a composite index; we sort in memory. */
-  const snap = await db
-    .collection("notifications")
-    .where("userId", "==", uid)
-    .limit(100)
-    .get();
+  const cached = notifCache.get(uid);
+  if (cached && cached.expiresAt > Date.now()) {
+    return NextResponse.json({ items: cached.items });
+  }
 
-  const items = snap.docs
-    .map((d) => ({ d, ms: createdAtMs(d.data() as Record<string, unknown>) }))
-    .sort((a, b) => b.ms - a.ms)
-    .slice(0, 40)
-    .map(({ d }) => serializeFirestoreForJson({ id: d.id, ...d.data() }));
-  return NextResponse.json({ items });
+  try {
+    const db = adminDb();
+    /** Equality-only query avoids a composite index; we sort in memory. */
+    const snap = await db
+      .collection("notifications")
+      .where("userId", "==", uid)
+      .limit(100)
+      .get();
+
+    const items = snap.docs
+      .map((d) => ({ d, ms: createdAtMs(d.data() as Record<string, unknown>) }))
+      .sort((a, b) => b.ms - a.ms)
+      .slice(0, 40)
+      .map(({ d }) => serializeFirestoreForJson({ id: d.id, ...d.data() }));
+
+    notifCache.set(uid, { items, expiresAt: Date.now() + CACHE_TTL_MS });
+    return NextResponse.json({ items });
+  } catch {
+    // Quota exceeded or other Firestore error — serve stale cache if available, else empty
+    const stale = notifCache.get(uid);
+    return NextResponse.json({ items: stale?.items ?? [] });
+  }
 }
 
 const markReadSchema = z.object({
@@ -66,5 +83,6 @@ export async function PATCH(req: Request) {
     batch.update(s.ref, { read: true, readAt: FieldValue.serverTimestamp() });
   }
   await batch.commit();
+  notifCache.delete(uid); // invalidate so next GET reflects updated read state
   return NextResponse.json({ ok: true });
 }

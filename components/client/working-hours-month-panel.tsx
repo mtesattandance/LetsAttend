@@ -71,9 +71,15 @@ function kindLabel(kind: Payload["entries"][number]["kind"]): string {
 
 export function WorkingHoursMonthPanel({
   workerId,
+  wageRate,
+  overtimeRate,
 }: {
   /** When set, loads that user (admin only). When omitted, loads the signed-in user. */
   workerId?: string;
+  /** Regular hourly wage rate in Rs. Used to compute Regular Wage. */
+  wageRate?: number;
+  /** Overtime hourly wage rate in Rs. Used to compute Overtime Wage (separate from regular). */
+  overtimeRate?: number;
 }) {
   const { mode } = useCalendarMode();
   const { user: viewer } = useDashboardUser();
@@ -240,7 +246,7 @@ export function WorkingHoursMonthPanel({
     }
   }
 
-  const renderPdf = React.useCallback(async (list: Payload[], titlePeriod: string, fileSuffix: string) => {
+  const renderPdf = React.useCallback(async (list: Payload[], titlePeriod: string, fileSuffix: string, pdfWageRate?: number, pdfOvertimeRate?: number) => {
     const doc = new jsPDF({ unit: "pt", format: "a4" });
     const logo = await fetchLogoDataUrl();
     const workerMeta = list[0]?.worker;
@@ -249,33 +255,33 @@ export function WorkingHoursMonthPanel({
     const drawHeader = (monthLabel: string) => {
       const pageWidth = doc.internal.pageSize.getWidth();
       const centerX = pageWidth / 2;
-      const y = 40;
-      // Logo left-aligned
-      if (logo) doc.addImage(logo, "PNG", marginX, y, 48, 48);
+      const y = 14;
+      // Logo left-aligned, compact size
+      if (logo) doc.addImage(logo, "PNG", marginX, y, 36, 36);
       // Company name centered
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.text("MASS TECHNOLOGY AND ENGINEERING SOLUTION PVT. LTD", centerX, y + 16, { align: "center" });
-      doc.setFontSize(9.5);
-      doc.setFont("helvetica", "normal");
-      doc.text("KAGESHWORI MANOHARA-09, KATHMANDU", centerX, y + 30, { align: "center" });
-      doc.text("info@masstech.com.np  |  masstechno2020@gmail.com", centerX, y + 42, { align: "center" });
-      doc.text("9851358290  |  9842995084", centerX, y + 54, { align: "center" });
-      // Divider
-      doc.setDrawColor(180, 180, 180);
-      doc.line(marginX, y + 62, pageWidth - marginX, y + 62);
-      // "Attendance Sheet" centered bold
       doc.setFontSize(12);
       doc.setFont("helvetica", "bold");
-      doc.text("Attendance Sheet", centerX, y + 78, { align: "center" });
+      doc.text("MASS TECHNOLOGY AND ENGINEERING SOLUTION PVT. LTD", centerX, y + 12, { align: "center" });
+      doc.setFontSize(8);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(9.5);
-      doc.text(`Employee: ${workerMeta?.name ?? "-"}`, marginX, y + 96);
-      doc.text(`Employee ID: ${workerMeta?.employeeId ?? "-"}`, marginX + 175, y + 96);
-      doc.text(`Designation: ${workerMeta?.designation ?? "-"}`, marginX + 355, y + 96);
-      doc.text(`Month: ${monthLabel}`, marginX, y + 110);
-      doc.text(`Period: ${titlePeriod}`, marginX + 250, y + 110);
-      return y + 126;
+      doc.text("KAGESHWORI MANOHARA-09, KATHMANDU", centerX, y + 22, { align: "center" });
+      doc.text("info@masstech.com.np  |  masstechno2020@gmail.com", centerX, y + 31, { align: "center" });
+      doc.text("9851358290  |  9842995084", centerX, y + 40, { align: "center" });
+      // Divider
+      doc.setDrawColor(200, 200, 200);
+      doc.line(marginX, y + 46, pageWidth - marginX, y + 46);
+      // "Attendance Sheet"
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("Attendance Sheet", centerX, y + 57, { align: "center" });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.text(`Employee: ${workerMeta?.name ?? "-"}`, marginX, y + 69);
+      doc.text(`Employee ID: ${workerMeta?.employeeId ?? "-"}`, marginX + 175, y + 69);
+      doc.text(`Designation: ${workerMeta?.designation ?? "-"}`, marginX + 355, y + 69);
+      doc.text(`Month: ${monthLabel}`, marginX, y + 80);
+      doc.text(`Period: ${titlePeriod}`, marginX + 250, y + 80);
+      return y + 92;
     };
 
     let yearlyOn = 0;
@@ -302,7 +308,7 @@ export function WorkingHoursMonthPanel({
           r.dutyHours.toFixed(2),
           r.workPlace,
           r.schedule || "—",
-          r.remark || "-",
+          r.remark === "No work entry" ? "No entry" : (r.remark || "-"),
         ]);
       autoTable(doc, {
         startY,
@@ -320,20 +326,31 @@ export function WorkingHoursMonthPanel({
           ],
         ],
         body: tableRows,
-        foot: [[
-          "",
-          "",
-          "Month total",
-          "",
-          "",
-          p.totalHours.toFixed(2),
-          `On-site ${p.onSiteSessionHours.toFixed(2)} | OT ${p.approvedClockOvertimeHours.toFixed(2)} | Off-site ${p.approvedOffsiteHours.toFixed(2)}`,
-          "",
-          "",
-        ]],
-        styles: { fontSize: 8, cellPadding: 4.2 },
-        headStyles: { fillColor: [24, 24, 27], textColor: [255, 255, 255] },
-        footStyles: { fillColor: [245, 245, 245], textColor: [20, 20, 20] },
+        foot: [
+          [
+            { content: "", colSpan: 2 },
+            { content: "Month total" },
+            { content: "", colSpan: 2 },
+            { content: p.totalHours.toFixed(2) },
+            { content: `On-site ${p.onSiteSessionHours.toFixed(2)} | OT ${p.approvedClockOvertimeHours.toFixed(2)} | Off-site ${p.approvedOffsiteHours.toFixed(2)}`, colSpan: 3 },
+          ],
+          ...((typeof pdfWageRate === "number" || typeof pdfOvertimeRate === "number")
+            ? (() => {
+                const rRate = pdfWageRate ?? 0;
+                const oRate = pdfOvertimeRate ?? 0;
+                const regWage = p.regularHoursUpToCap * rRate;
+                const otWage = p.hoursOverCapAsOvertime * oRate;
+                return [[
+                  { content: `Regular Wage: Rs. ${regWage.toFixed(2)}`, colSpan: 3 },
+                  { content: `Overtime Wage: Rs. ${otWage.toFixed(2)}`, colSpan: 3 },
+                  { content: `Total Wage: Rs. ${(regWage + otWage).toFixed(2)}`, colSpan: 3 },
+                ]];
+              })()
+            : []),
+        ],
+        styles: { fontSize: 8, cellPadding: 5.5 },
+        headStyles: { fillColor: [24, 24, 27], textColor: [255, 255, 255], fontSize: 8, cellPadding: 5.5 },
+        footStyles: { fillColor: [245, 245, 245], textColor: [20, 20, 20], fontSize: 8, cellPadding: 5.5 },
       });
       yearlyOn += p.onSiteSessionHours;
       yearlyOt += p.approvedClockOvertimeHours;
@@ -344,17 +361,26 @@ export function WorkingHoursMonthPanel({
     if (list.length > 1) {
       doc.addPage("a4");
       const y = drawHeader("Final summary");
+      const yearlyRegular = Math.min(yearlyTotal, MONTHLY_REGULAR_CAP_HOURS * list.length);
+      const yearlyOverCap = Math.max(0, yearlyTotal - MONTHLY_REGULAR_CAP_HOURS * list.length);
       autoTable(doc, {
         startY: y,
-        head: [["Metric", "Hours"]],
-        body: [
-          ["On-site total", yearlyOn.toFixed(2)],
-          ["Overtime total", yearlyOt.toFixed(2)],
-          ["Off-site total", yearlyOff.toFixed(2)],
-          ["Grand total", yearlyTotal.toFixed(2)],
-          ["Regular up to cap", Math.min(yearlyTotal, MONTHLY_REGULAR_CAP_HOURS * 12).toFixed(2)],
-          ["Over cap (year aggregate)", Math.max(0, yearlyTotal - MONTHLY_REGULAR_CAP_HOURS * 12).toFixed(2)],
-        ],
+        head: [["Metric", "Hours", ...((typeof pdfWageRate === "number" || typeof pdfOvertimeRate === "number") ? ["Amount (Rs.)"] : [])]],
+        body: (() => {
+          const hasRates = typeof pdfWageRate === "number" || typeof pdfOvertimeRate === "number";
+          const rRate = pdfWageRate ?? 0;
+          const oRate = pdfOvertimeRate ?? 0;
+          const yearlyRegularWage = yearlyRegular * rRate;
+          const yearlyOvertimeWage = yearlyOverCap * oRate;
+          return [
+            ["On-site total", yearlyOn.toFixed(2), ...(hasRates ? ["-"] : [])],
+            ["Overtime total", yearlyOt.toFixed(2), ...(hasRates ? ["-"] : [])],
+            ["Off-site total", yearlyOff.toFixed(2), ...(hasRates ? ["-"] : [])],
+            ["Regular up to cap", yearlyRegular.toFixed(2), ...(hasRates ? [`Rs. ${yearlyRegularWage.toFixed(2)}`] : [])],
+            ["Over cap (overtime)", yearlyOverCap.toFixed(2), ...(hasRates ? [`Rs. ${yearlyOvertimeWage.toFixed(2)}`] : [])],
+            ["Grand total", yearlyTotal.toFixed(2), ...(hasRates ? [`Rs. ${(yearlyRegularWage + yearlyOvertimeWage).toFixed(2)}`] : [])],
+          ];
+        })(),
         styles: { fontSize: 10, cellPadding: 6 },
         headStyles: { fillColor: [24, 24, 27], textColor: [255, 255, 255] },
       });
@@ -367,13 +393,13 @@ export function WorkingHoursMonthPanel({
     if (!data) return;
     setDownloading(true);
     try {
-      await renderPdf([data], titleMonth, month);
+      await renderPdf([data], titleMonth, month, wageRate, overtimeRate);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to download PDF");
     } finally {
       setDownloading(false);
     }
-  }, [data, month, renderPdf, titleMonth]);
+  }, [data, month, renderPdf, titleMonth, wageRate, overtimeRate]);
 
   const downloadYearPdf = React.useCallback(async () => {
     setDownloading(true);
@@ -396,13 +422,13 @@ export function WorkingHoursMonthPanel({
         if (!res.ok) throw new Error(json.error ?? `Failed to load ${m}`);
         list.push(json);
       }
-      await renderPdf(list, `${year}`, `${year}`);
+      await renderPdf(list, `${year}`, `${year}`, wageRate, overtimeRate);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to download PDF");
     } finally {
       setDownloading(false);
     }
-  }, [renderPdf, workerId, year, zone]);
+  }, [renderPdf, workerId, year, zone, wageRate, overtimeRate]);
 
   const downloadPeriodPdf = React.useCallback(async () => {
     setDownloading(true);
@@ -448,14 +474,14 @@ export function WorkingHoursMonthPanel({
         periodMode === "year"
           ? `${periodYear}`
           : `${periodStartMonth}-${periodEndMonth}`;
-      await renderPdf(list, title, suffix);
+      await renderPdf(list, title, suffix, wageRate, overtimeRate);
       setPeriodOpen(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to download PDF");
     } finally {
       setDownloading(false);
     }
-  }, [mode, periodEndMonth, periodMode, periodStartMonth, periodYear, renderPdf, workerId, zone]);
+  }, [mode, periodEndMonth, periodMode, periodStartMonth, periodYear, renderPdf, workerId, zone, wageRate, overtimeRate]);
 
   return (
     <div className="space-y-6">
@@ -651,6 +677,55 @@ export function WorkingHoursMonthPanel({
             </Card>
           </div>
 
+          {(typeof wageRate === "number" || typeof overtimeRate === "number") && data && (() => {
+            const rRate = wageRate ?? 0;
+            const oRate = overtimeRate ?? 0;
+            const regularWage = data.regularHoursUpToCap * rRate;
+            const overtimeWage = data.hoursOverCapAsOvertime * oRate;
+            const totalWage = regularWage + overtimeWage;
+            return (
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Card className="border-emerald-200/80 dark:border-emerald-500/25">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Regular Wage</CardTitle>
+                    <CardDescription>
+                      {data.regularHoursUpToCap.toFixed(2)} h × Rs. {rRate.toFixed(2)}/hr
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-2xl font-semibold tabular-nums text-emerald-700 dark:text-emerald-300">
+                      Rs. {regularWage.toFixed(2)}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="border-amber-200/80 dark:border-amber-500/25">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Overtime Wage</CardTitle>
+                    <CardDescription>
+                      {data.hoursOverCapAsOvertime.toFixed(2)} h × Rs. {oRate.toFixed(2)}/hr
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-2xl font-semibold tabular-nums text-amber-700 dark:text-amber-300">
+                      Rs. {overtimeWage.toFixed(2)}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="border-cyan-200/80 dark:border-cyan-500/25">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Total Wage</CardTitle>
+                    <CardDescription>Regular + Overtime</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-2xl font-semibold tabular-nums text-cyan-700 dark:text-cyan-300">
+                      Rs. {totalWage.toFixed(2)}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            );
+          })()}
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Month timeline</CardTitle>
@@ -839,6 +914,37 @@ export function WorkingHoursMonthPanel({
                     </td>
                     <td className="py-2 tabular-nums">Cap+OT {fmtHr(Math.max(0, totalsFromRows.total - MONTHLY_REGULAR_CAP_HOURS))}</td>
                   </tr>
+                  {(typeof wageRate === "number" || typeof overtimeRate === "number") && (() => {
+                    const rRate = wageRate ?? 0;
+                    const oRate = overtimeRate ?? 0;
+                    const regularHrs = Math.min(totalsFromRows.total, MONTHLY_REGULAR_CAP_HOURS);
+                    const overtimeHrs = Math.max(0, totalsFromRows.total - MONTHLY_REGULAR_CAP_HOURS);
+                    const regularWage = regularHrs * rRate;
+                    const overtimeWageAmt = overtimeHrs * oRate;
+                    const totalWage = regularWage + overtimeWageAmt;
+                    return (
+                      <tr className="border-t border-zinc-200 bg-zinc-50/60 text-xs dark:border-white/10 dark:bg-white/3">
+                        <td className="py-2 pr-3 tabular-nums" colSpan={3}>
+                          <span className="text-zinc-500">Regular Wage:</span>{" "}
+                          <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+                            Rs. {regularWage.toFixed(2)}
+                          </span>
+                        </td>
+                        <td className="py-2 pr-3 tabular-nums" colSpan={3}>
+                          <span className="text-zinc-500">Overtime Wage:</span>{" "}
+                          <span className="font-semibold text-amber-700 dark:text-amber-300">
+                            Rs. {overtimeWageAmt.toFixed(2)}
+                          </span>
+                        </td>
+                        <td className="py-2 tabular-nums font-semibold" colSpan={3}>
+                          <span className="text-zinc-500">Total Wage:</span>{" "}
+                          <span className="text-cyan-700 dark:text-cyan-300">
+                            Rs. {totalWage.toFixed(2)}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })()}
                 </tbody>
               </table>
             </CardContent>

@@ -10,6 +10,11 @@ import { timeZoneFromUserSnapshot } from "@/lib/attendance/time-zone-from-snap";
 
 export const runtime = "nodejs";
 
+// Cache per "superAdmin:siteId" key — 30s TTL
+const CACHE_TTL_MS = 30_000;
+type CacheEntry = { data: unknown; expiresAt: number };
+const liveTrackingCache = new Map<string, CacheEntry>();
+
 async function assertAdminRole(decoded: { uid: string; email?: string | null }) {
   if (isSuperAdminDecoded(decoded)) return;
 
@@ -84,10 +89,16 @@ export async function GET(req: Request) {
     return jsonError("Forbidden", 403);
   }
 
+  const isSuperAdmin = isSuperAdminDecoded(decoded);
+  const siteIdParam = new URL(req.url).searchParams.get("siteId")?.trim() ?? "";
+  const cacheKey = `${String(isSuperAdmin)}:${siteIdParam}`;
+  const cached = liveTrackingCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return NextResponse.json(cached.data);
+  }
+
   const db = adminDb();
   const viewerTz = timeZoneFromUserSnapshot(await db.collection("users").doc(decoded.uid).get());
-
-  const siteIdParam = new URL(req.url).searchParams.get("siteId")?.trim() ?? "";
   let siteFilter: { latitude: number; longitude: number; radius: number } | null = null;
 
   if (siteIdParam) {
@@ -263,18 +274,11 @@ export async function GET(req: Request) {
   }
 
   const parsed = outSchema.safeParse(workers);
-  if (!parsed.success) {
-    return NextResponse.json({
-      workers,
-      offsitePins,
-      site: siteFilter,
-    });
-  }
+  const responseData = parsed.success
+    ? { workers: parsed.data, offsitePins, site: siteFilter }
+    : { workers, offsitePins, site: siteFilter };
 
-  return NextResponse.json({
-    workers: parsed.data,
-    offsitePins,
-    site: siteFilter,
-  });
+  liveTrackingCache.set(cacheKey, { data: responseData, expiresAt: Date.now() + CACHE_TTL_MS });
+  return NextResponse.json(responseData);
 }
 

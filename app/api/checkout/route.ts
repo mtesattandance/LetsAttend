@@ -11,6 +11,7 @@ import { canRecordAttendanceFor } from "@/lib/attendance/proxy-attendance";
 import { computeCheckoutWindowState, DEFAULT_CHECKOUT_GRACE_MINUTES } from "@/lib/site/work-window";
 import { zonedWallClockToUtcMillis } from "@/lib/site/zoned-schedule";
 import { resolveSiteScheduleTimeZone } from "@/lib/server/site-schedule-time-zone";
+import { invalidateTodayCache } from "@/lib/cache/today-cache";
 
 export const runtime = "nodejs";
 
@@ -160,5 +161,6 @@ export async function POST(req: Request) {
     { merge: true }
   );
 
+  invalidateTodayCache(workerUid);
   return NextResponse.json({ ok: true, distanceM: Math.round(check.distanceM) });
 }

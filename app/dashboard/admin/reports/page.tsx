@@ -19,6 +19,7 @@ import { monthLabelForModeYm, formatIsoForCalendar, bsIsoToAdIso, adIsoToBsIso, 
 import { DEFAULT_ATTENDANCE_TIME_ZONE } from "@/lib/date/time-zone";
 import { toast } from "sonner";
 import { FileArchive, Loader2, Sparkles, User, Users, CalendarDays, CalendarRange, ChevronRight, Activity, ArrowDownToLine, Zap, MapPin, Building2, Table2 } from "lucide-react";
+import { DateField } from "@/components/ui/date-field";
 
 type UserRow = {
   id: string;
@@ -66,6 +67,8 @@ type HoursPayload = {
   approvedOffsiteHours: number;
   approvedClockOvertimeHours: number;
   onSiteSessionHours: number;
+  regularHoursUpToCap: number;
+  hoursOverCapAsOvertime: number;
 };
 
 function kindLabel(kind: HoursPayload["entries"][number]["kind"]): string {
@@ -111,6 +114,8 @@ export default function AdminReportsPage() {
   // ── Employee preview state ──────────────────────────────────────────────
   const [previewData, setPreviewData] = React.useState<HoursPayload | null>(null);
   const [previewLoading, setPreviewLoading] = React.useState(false);
+  const [previewWageRate, setPreviewWageRate] = React.useState<number | null>(null);
+  const [previewOvertimeRate, setPreviewOvertimeRate] = React.useState<number | null>(null);
 
   // ── Site reports state ───────────────────────────────────────────────────
   const [sites, setSites] = React.useState<SiteRow[]>([]);
@@ -222,6 +227,22 @@ export default function AdminReportsPage() {
     }
   }, [mode, mounted]);
 
+  const fetchWageRates = React.useCallback(async (workerId: string, token: string): Promise<{ wageRate: number | null; overtimeRate: number | null }> => {
+    try {
+      const res = await fetch(`/api/admin/wage-rate?workerId=${workerId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return { wageRate: null, overtimeRate: null };
+      const data = (await res.json()) as { wageRate: number | null; overtimeRate: number | null };
+      return {
+        wageRate: typeof data.wageRate === "number" ? data.wageRate : null,
+        overtimeRate: typeof data.overtimeRate === "number" ? data.overtimeRate : null,
+      };
+    } catch {
+      return { wageRate: null, overtimeRate: null };
+    }
+  }, []);
+
   const buildMonthsFromPeriod = React.useCallback(() => {
     if (periodMode === "month") {
       return [periodSingleMonth];
@@ -260,32 +281,38 @@ export default function AdminReportsPage() {
   }, []);
 
   const buildPdfBytes = React.useCallback(
-    async (rows: HoursPayload[], titlePeriod: string): Promise<Uint8Array> => {
+    async (rows: HoursPayload[], titlePeriod: string, pdfWageRate?: number | null, pdfOvertimeRate?: number | null): Promise<Uint8Array> => {
       const doc = new jsPDF({ unit: "pt", format: "a4" });
       const logo = await fetchLogoDataUrl();
       const workerMeta = rows[0]?.worker;
       const marginX = 40;
 
       const drawHeader = (monthLabel: string) => {
-        const y = 40;
-        if (logo) doc.addImage(logo, "PNG", marginX, y, 48, 48);
-        doc.setFontSize(15);
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const centerX = pageWidth / 2;
+        const y = 14;
+        if (logo) doc.addImage(logo, "PNG", marginX, y, 36, 36);
+        doc.setFontSize(12);
         doc.setFont("helvetica", "bold");
-        doc.text("MASS TECHNOLOGY AND ENGINEERING SOLUTION PVT. LTD", marginX + 58, y + 14);
-        doc.setFontSize(10.5);
+        doc.text("MASS TECHNOLOGY AND ENGINEERING SOLUTION PVT. LTD", centerX, y + 12, { align: "center" });
+        doc.setFontSize(8);
         doc.setFont("helvetica", "normal");
-        doc.text("KAGESHWORI MANOHARA-09, KATHMANDU", marginX + 58, y + 30);
-        doc.text("info@masstech.com.np, masstechno2020@gmail.com", marginX + 58, y + 44);
-        doc.text("9851358290, 9842995084", marginX + 58, y + 58);
+        doc.text("KAGESHWORI MANOHARA-09, KATHMANDU", centerX, y + 22, { align: "center" });
+        doc.text("info@masstech.com.np  |  masstechno2020@gmail.com", centerX, y + 31, { align: "center" });
+        doc.text("9851358290  |  9842995084", centerX, y + 40, { align: "center" });
+        doc.setDrawColor(200, 200, 200);
+        doc.line(marginX, y + 46, pageWidth - marginX, y + 46);
+        doc.setFontSize(10);
         doc.setFont("helvetica", "bold");
-        doc.text("Attendance Sheet", marginX, y + 82);
+        doc.text("Attendance Sheet", centerX, y + 57, { align: "center" });
         doc.setFont("helvetica", "normal");
-        doc.text(`Employee: ${workerMeta?.name ?? "-"}`, marginX, y + 100);
-        doc.text(`Employee ID: ${workerMeta?.employeeId ?? "-"}`, marginX + 180, y + 100);
-        doc.text(`Designation: ${workerMeta?.designation ?? "-"}`, marginX + 360, y + 100);
-        doc.text(`Month: ${monthLabel}`, marginX, y + 116);
-        doc.text(`Period: ${titlePeriod}`, marginX + 250, y + 116);
-        return y + 130;
+        doc.setFontSize(8.5);
+        doc.text(`Employee: ${workerMeta?.name ?? "-"}`, marginX, y + 69);
+        doc.text(`Employee ID: ${workerMeta?.employeeId ?? "-"}`, marginX + 175, y + 69);
+        doc.text(`Designation: ${workerMeta?.designation ?? "-"}`, marginX + 355, y + 69);
+        doc.text(`Month: ${monthLabel}`, marginX, y + 80);
+        doc.text(`Period: ${titlePeriod}`, marginX + 250, y + 80);
+        return y + 92;
       };
 
       for (let i = 0; i < rows.length; i++) {
@@ -321,22 +348,33 @@ export default function AdminReportsPage() {
             r.dutyHours.toFixed(2),
             r.workPlace,
             r.schedule || "—",
-            r.remark || "-",
+            r.remark === "No work entry" ? "No entry" : (r.remark || "-"),
           ]),
-          foot: [[
-            "",
-            "",
-            "Month total",
-            "",
-            "",
-            p.totalHours.toFixed(2),
-            `On-site ${p.onSiteSessionHours.toFixed(2)} | OT ${p.approvedClockOvertimeHours.toFixed(2)} | Off-site ${p.approvedOffsiteHours.toFixed(2)}`,
-            "",
-            "",
-          ]],
-          styles: { fontSize: 8, cellPadding: 4.2 },
-          headStyles: { fillColor: [24, 24, 27], textColor: [255, 255, 255] },
-          footStyles: { fillColor: [245, 245, 245], textColor: [20, 20, 20] },
+          foot: [
+            [
+              { content: "", colSpan: 2 },
+              { content: "Month total" },
+              { content: "", colSpan: 2 },
+              { content: p.totalHours.toFixed(2) },
+              { content: `On-site ${p.onSiteSessionHours.toFixed(2)} | OT ${p.approvedClockOvertimeHours.toFixed(2)} | Off-site ${p.approvedOffsiteHours.toFixed(2)}`, colSpan: 3 },
+            ],
+            ...((typeof pdfWageRate === "number" || typeof pdfOvertimeRate === "number")
+              ? (() => {
+                  const rRate = pdfWageRate ?? 0;
+                  const oRate = pdfOvertimeRate ?? 0;
+                  const regWage = p.regularHoursUpToCap * rRate;
+                  const otWage = p.hoursOverCapAsOvertime * oRate;
+                  return [[
+                    { content: `Regular Wage: Rs. ${regWage.toFixed(2)}`, colSpan: 3 },
+                    { content: `Overtime Wage: Rs. ${otWage.toFixed(2)}`, colSpan: 3 },
+                    { content: `Total Wage: Rs. ${(regWage + otWage).toFixed(2)}`, colSpan: 3 },
+                  ]];
+                })()
+              : []),
+          ],
+          styles: { fontSize: 8, cellPadding: 5.5 },
+          headStyles: { fillColor: [24, 24, 27], textColor: [255, 255, 255], fontSize: 8, cellPadding: 5.5 },
+          footStyles: { fillColor: [245, 245, 245], textColor: [20, 20, 20], fontSize: 8, cellPadding: 5.5 },
         });
       }
       const ab = doc.output("arraybuffer");
@@ -352,24 +390,31 @@ export default function AdminReportsPage() {
     }
     setPreviewLoading(true);
     setPreviewData(null);
+    setPreviewWageRate(null);
+    setPreviewOvertimeRate(null);
     try {
       const auth = getFirebaseAuth();
       const u = auth.currentUser;
       if (!u) throw new Error("Not signed in");
       const token = await u.getIdToken();
       const q = new URLSearchParams({ month: periodSingleMonth, workerId: selectedWorkerId });
-      const res = await fetch(`/api/attendance/working-hours?${q.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const [res, rates] = await Promise.all([
+        fetch(`/api/attendance/working-hours?${q.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetchWageRates(selectedWorkerId, token),
+      ]);
       const json = (await res.json()) as HoursPayload & { error?: string };
       if (!res.ok) throw new Error(json.error ?? "Failed to load preview");
       setPreviewData(json);
+      setPreviewWageRate(rates.wageRate);
+      setPreviewOvertimeRate(rates.overtimeRate);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to load preview");
     } finally {
       setPreviewLoading(false);
     }
-  }, [selectedWorkerId, periodSingleMonth]);
+  }, [selectedWorkerId, periodSingleMonth, fetchWageRates]);
 
   const startDownload = React.useCallback(async () => {
     if (targetType === "individual" && !selectedWorkerId) {
@@ -435,7 +480,8 @@ export default function AdminReportsPage() {
         }
         
         setDownloadStatus("Generating PDF...");
-        const pdf = await buildPdfBytes(monthRows, periodTitle);
+        const empRates = await fetchWageRates(emp.id, token);
+        const pdf = await buildPdfBytes(monthRows, periodTitle, empRates.wageRate, empRates.overtimeRate);
         setDownloadStatus("Downloading...");
         const blob = new Blob([pdf as any], { type: "application/pdf" });
         const url = URL.createObjectURL(blob);
@@ -476,7 +522,8 @@ export default function AdminReportsPage() {
             monthRows.push(json);
           }
           if (cancelDownloadRef.current) throw new Error("Download cancelled");
-          const pdf = await buildPdfBytes(monthRows, periodTitle);
+          const empRates = await fetchWageRates(emp.id, token);
+          const pdf = await buildPdfBytes(monthRows, periodTitle, empRates.wageRate, empRates.overtimeRate);
           folder.file(`working-hours-${suffix}.pdf`, pdf);
           setDownloadDoneCount(idx + 1);
         }
@@ -521,6 +568,7 @@ export default function AdminReportsPage() {
     periodStartMonth,
     periodEndMonth,
     buildPdfBytes,
+    fetchWageRates,
   ]);
 
   const cancelDownload = React.useCallback(() => {
@@ -1077,12 +1125,86 @@ export default function AdminReportsPage() {
                         On-site: {previewData.onSiteSessionHours.toFixed(2)} · Overtime: {previewData.approvedClockOvertimeHours.toFixed(2)} · Off-site: {previewData.approvedOffsiteHours.toFixed(2)}
                       </td>
                     </tr>
+                    {(typeof previewWageRate === "number" || typeof previewOvertimeRate === "number") && (() => {
+                      const rRate = previewWageRate ?? 0;
+                      const oRate = previewOvertimeRate ?? 0;
+                      const regWage = previewData.regularHoursUpToCap * rRate;
+                      const otWage = previewData.hoursOverCapAsOvertime * oRate;
+                      return (
+                        <tr className="bg-zinc-50/60 dark:bg-white/3 text-xs">
+                          <td className="px-4 py-2.5 tabular-nums" colSpan={3}>
+                            <span className="text-zinc-500">Regular Wage:</span>{" "}
+                            <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+                              Rs. {regWage.toFixed(2)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 tabular-nums" colSpan={3}>
+                            <span className="text-zinc-500">Overtime Wage:</span>{" "}
+                            <span className="font-semibold text-amber-700 dark:text-amber-300">
+                              Rs. {otWage.toFixed(2)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 tabular-nums font-semibold" colSpan={2}>
+                            <span className="text-zinc-500">Total Wage:</span>{" "}
+                            <span className="text-cyan-700 dark:text-cyan-300">
+                              Rs. {(regWage + otWage).toFixed(2)}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })()}
                   </tfoot>
                 </table>
               </div>
             </CardContent>
           </Card>
         )}
+
+        {/* Wage summary cards — shown when preview data + at least one rate is set */}
+        {previewData && (typeof previewWageRate === "number" || typeof previewOvertimeRate === "number") && (() => {
+          const rRate = previewWageRate ?? 0;
+          const oRate = previewOvertimeRate ?? 0;
+          const regularWage = previewData.regularHoursUpToCap * rRate;
+          const overtimeWage = previewData.hoursOverCapAsOvertime * oRate;
+          const totalWage = regularWage + overtimeWage;
+          return (
+            <div className="grid gap-4 sm:grid-cols-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <Card className="border-emerald-200/80 dark:border-emerald-500/25">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Regular Wage</CardTitle>
+                  <p className="text-sm text-zinc-500">{previewData.regularHoursUpToCap.toFixed(2)} h × Rs. {rRate.toFixed(2)}/hr</p>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-semibold tabular-nums text-emerald-700 dark:text-emerald-300">
+                    Rs. {regularWage.toFixed(2)}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="border-amber-200/80 dark:border-amber-500/25">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Overtime Wage</CardTitle>
+                  <p className="text-sm text-zinc-500">{previewData.hoursOverCapAsOvertime.toFixed(2)} h × Rs. {oRate.toFixed(2)}/hr</p>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-semibold tabular-nums text-amber-700 dark:text-amber-300">
+                    Rs. {overtimeWage.toFixed(2)}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="border-cyan-200/80 dark:border-cyan-500/25">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Total Wage</CardTitle>
+                  <p className="text-sm text-zinc-500">Regular + Overtime</p>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-semibold tabular-nums text-cyan-700 dark:text-cyan-300">
+                    Rs. {totalWage.toFixed(2)}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          );
+        })()}
         </>) /* end employee tab */}
 
         {/* ════════════════════════════════════════════════ SITE TAB ══ */}
@@ -1145,11 +1267,10 @@ export default function AdminReportsPage() {
                   {sitePeriodMode === "day" && (
                     <div className="animate-in fade-in zoom-in-95 duration-200">
                       <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-zinc-500">Select Date</label>
-                      <input
-                        type="date"
+                      <DateField
                         value={sitePeriodDay}
-                        onChange={(e) => setSitePeriodDay(e.target.value)}
-                        className="h-11 w-full rounded-xl border border-zinc-200 bg-white/50 px-4 text-sm font-medium shadow-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 dark:border-white/10 dark:bg-zinc-900/50 dark:text-white"
+                        onChange={setSitePeriodDay}
+                        timeZone={DEFAULT_ATTENDANCE_TIME_ZONE}
                       />
                     </div>
                   )}

@@ -3,6 +3,7 @@ import { requireBearerUser } from "@/lib/auth/verify-request";
 import { jsonError } from "@/lib/api/json-error";
 import { adminDb, FieldValue } from "@/lib/firebase/admin";
 import { isSuperAdminDecoded } from "@/lib/auth/super-admin";
+import { invalidateCalendarModeCache } from "@/lib/cache/calendar-mode-cache";
 
 export const runtime = "nodejs";
 
@@ -35,5 +36,6 @@ export async function POST(req: Request) {
     { merge: true }
   );
 
+  invalidateCalendarModeCache();
   return Response.json({ ok: true, mode: parsed.data.calendarMode });
 }

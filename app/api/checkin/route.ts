@@ -9,6 +9,7 @@ import { timeZoneFromUserSnapshot } from "@/lib/attendance/time-zone-from-snap";
 import { canRecordAttendanceFor } from "@/lib/attendance/proxy-attendance";
 import { computeWorkWindow } from "@/lib/site/work-window";
 import { resolveSiteScheduleTimeZone } from "@/lib/server/site-schedule-time-zone";
+import { invalidateTodayCache } from "@/lib/cache/today-cache";
 
 export const runtime = "nodejs";
 
@@ -180,6 +181,7 @@ export async function POST(req: Request) {
     { merge: true }
   );
 
+  invalidateTodayCache(workerUid);
   return NextResponse.json({
     ok: true,
     attendanceId: attRef.id,

@@ -71,6 +71,10 @@ export default function AdminWorkingHoursPage() {
   });
   const [periodStartMonth, setPeriodStartMonth] = React.useState(() => currentMonthYyyyMmForMode("ad", DEFAULT_ATTENDANCE_TIME_ZONE));
   const [periodEndMonth, setPeriodEndMonth] = React.useState(() => currentMonthYyyyMmForMode("ad", DEFAULT_ATTENDANCE_TIME_ZONE));
+  const [wageRate, setWageRate] = React.useState<number | null>(null);
+  const [overtimeRate, setOvertimeRate] = React.useState<number | null>(null);
+  const [wageRateLoading, setWageRateLoading] = React.useState(false);
+  const [wageRateSaving, setWageRateSaving] = React.useState(false);
   const [downloadingAll, setDownloadingAll] = React.useState(false);
   const [downloadStatus, setDownloadStatus] = React.useState("Waiting to start...");
   const [downloadCurrentEmployee, setDownloadCurrentEmployee] = React.useState("");
@@ -161,6 +165,74 @@ export default function AdminWorkingHoursPage() {
       cancelled = true;
     };
   }, []);
+
+  React.useEffect(() => {
+    if (!workerId) { setWageRate(null); setOvertimeRate(null); return; }
+    let cancelled = false;
+    const run = async () => {
+      setWageRateLoading(true);
+      try {
+        const auth = getFirebaseAuth();
+        const u = auth.currentUser;
+        if (!u) return;
+        const token = await u.getIdToken();
+        const res = await fetch(`/api/admin/wage-rate?workerId=${workerId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = (await res.json()) as { wageRate: number | null; overtimeRate: number | null };
+        if (!cancelled) {
+          setWageRate(data.wageRate);
+          setOvertimeRate(data.overtimeRate);
+        }
+      } catch {
+        if (!cancelled) { setWageRate(null); setOvertimeRate(null); }
+      } finally {
+        if (!cancelled) setWageRateLoading(false);
+      }
+    };
+    void run();
+    return () => { cancelled = true; };
+  }, [workerId]);
+
+  const saveWageRate = React.useCallback(async (rate: number | null) => {
+    if (!workerId || rate === null || rate < 0) return;
+    setWageRateSaving(true);
+    try {
+      const auth = getFirebaseAuth();
+      const u = auth.currentUser;
+      if (!u) return;
+      const token = await u.getIdToken();
+      await fetch("/api/admin/wage-rate", {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ workerId, wageRate: rate }),
+      });
+    } catch {
+      toast.error("Failed to save wage rate");
+    } finally {
+      setWageRateSaving(false);
+    }
+  }, [workerId]);
+
+  const saveOvertimeRate = React.useCallback(async (rate: number | null) => {
+    if (!workerId || rate === null || rate < 0) return;
+    setWageRateSaving(true);
+    try {
+      const auth = getFirebaseAuth();
+      const u = auth.currentUser;
+      if (!u) return;
+      const token = await u.getIdToken();
+      await fetch("/api/admin/wage-rate", {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ workerId, overtimeRate: rate }),
+      });
+    } catch {
+      toast.error("Failed to save overtime rate");
+    } finally {
+      setWageRateSaving(false);
+    }
+  }, [workerId]);
 
   const buildMonthsFromPeriod = React.useCallback(() => {
     if (periodMode === "year") {
@@ -407,34 +479,87 @@ export default function AdminWorkingHoursPage() {
             ) : users.length === 0 ? (
               <p className="text-sm text-zinc-500">No employees found.</p>
             ) : (
-              <div className="max-w-md space-y-2">
-                <label
-                  htmlFor="admin-wh-worker"
-                  className="text-sm font-medium text-zinc-700 dark:text-zinc-300"
-                >
-                  Employee
-                </label>
-                <SearchableSelect
-                  id="admin-wh-worker"
-                  value={workerId}
-                  onValueChange={setWorkerId}
-                  includeEmpty={false}
-                  options={users.map((u) => ({
-                    value: u.id,
-                    label: u.employeeId?.trim()
-                      ? `${u.employeeId} (${u.name || "Employee"})`
-                      : `${u.name || "Employee"}`,
-                    keywords: [u.employeeId ?? "", u.id, u.name, u.email],
-                  }))}
-                  emptyLabel="— Select —"
-                  searchPlaceholder="Search employees…"
-                />
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="min-w-0 flex-1 space-y-2" style={{ maxWidth: "28rem" }}>
+                  <label
+                    htmlFor="admin-wh-worker"
+                    className="text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                  >
+                    Employee
+                  </label>
+                  <SearchableSelect
+                    id="admin-wh-worker"
+                    value={workerId}
+                    onValueChange={setWorkerId}
+                    includeEmpty={false}
+                    options={users.map((u) => ({
+                      value: u.id,
+                      label: u.employeeId?.trim()
+                        ? `${u.employeeId} (${u.name || "Employee"})`
+                        : `${u.name || "Employee"}`,
+                      keywords: [u.employeeId ?? "", u.id, u.name, u.email],
+                    }))}
+                    emptyLabel="— Select —"
+                    searchPlaceholder="Search employees…"
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <div>
+                    <label
+                      htmlFor="admin-wh-wage-rate"
+                      className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400"
+                    >
+                      Regular Rate (Rs./hr)
+                    </label>
+                    <input
+                      id="admin-wh-wage-rate"
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={wageRate ?? ""}
+                      placeholder="0.00"
+                      disabled={!workerId || wageRateLoading}
+                      onChange={(e) =>
+                        setWageRate(e.target.value !== "" ? Number(e.target.value) : null)
+                      }
+                      onBlur={() => void saveWageRate(wageRate)}
+                      className="h-9 w-28 rounded-lg border border-zinc-200 bg-white px-2.5 text-sm shadow-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 disabled:opacity-50 dark:border-white/15 dark:bg-zinc-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="admin-wh-overtime-rate"
+                      className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400"
+                    >
+                      Overtime Rate (Rs./hr)
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        id="admin-wh-overtime-rate"
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={overtimeRate ?? ""}
+                        placeholder="0.00"
+                        disabled={!workerId || wageRateLoading}
+                        onChange={(e) =>
+                          setOvertimeRate(e.target.value !== "" ? Number(e.target.value) : null)
+                        }
+                        onBlur={() => void saveOvertimeRate(overtimeRate)}
+                        className="h-9 w-28 rounded-lg border border-zinc-200 bg-white px-2.5 text-sm shadow-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50 dark:border-white/15 dark:bg-zinc-900 dark:text-white"
+                      />
+                      {wageRateSaving && (
+                        <span className="text-xs text-zinc-400">Saving…</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </CardContent>
         </Card>
         {workerId ? (
-          <WorkingHoursMonthPanel key={workerId} workerId={workerId} />
+          <WorkingHoursMonthPanel key={workerId} workerId={workerId} wageRate={wageRate ?? undefined} overtimeRate={overtimeRate ?? undefined} />
         ) : null}
         {periodOpen && mounted && typeof document !== "undefined"
           ? createPortal(

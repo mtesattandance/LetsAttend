@@ -22,25 +22,30 @@ export async function POST(req: Request) {
   const parsed = bodySchema.safeParse(json);
   if (!parsed.success) return jsonError("Designation is required", 400);
 
-  const db = adminDb();
-  const userRef = db.collection("users").doc(auth.decoded.uid);
-  const userSnap = await userRef.get();
-  if (!userSnap.exists) return jsonError("User profile not found", 404);
+  try {
+    const db = adminDb();
+    const userRef = db.collection("users").doc(auth.decoded.uid);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) return jsonError("User profile not found", 404);
 
-  const role = String(userSnap.get("role") ?? "employee");
-  let employeeId = userSnap.get("employeeId");
-  if (role === "employee" && (typeof employeeId !== "string" || !employeeId.trim())) {
-    employeeId = await claimEmployeeId(db);
+    const role = String(userSnap.get("role") ?? "employee");
+    let employeeId = userSnap.get("employeeId");
+    if (role === "employee" && (typeof employeeId !== "string" || !employeeId.trim())) {
+      employeeId = await claimEmployeeId(db);
+    }
+
+    await userRef.set(
+      {
+        designation: parsed.data.designation,
+        ...(typeof employeeId === "string" && employeeId.trim() ? { employeeId } : {}),
+        onboardingCompletedAt: new Date(),
+      },
+      { merge: true }
+    );
+
+    return Response.json({ ok: true, employeeId: typeof employeeId === "string" ? employeeId : null });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Server error";
+    return jsonError(msg, 503);
   }
-
-  await userRef.set(
-    {
-      designation: parsed.data.designation,
-      ...(typeof employeeId === "string" && employeeId.trim() ? { employeeId } : {}),
-      onboardingCompletedAt: new Date(),
-    },
-    { merge: true }
-  );
-
-  return Response.json({ ok: true, employeeId: typeof employeeId === "string" ? employeeId : null });
 }

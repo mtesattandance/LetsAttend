@@ -93,9 +93,13 @@ export function NotificationsDropdown() {
         }
       })();
     });
+    // Poll every 10 minutes instead of every 60 seconds — reduces Firestore reads by 10×.
+    // Also skip the poll when the browser tab is hidden (user isn't looking).
     const id = window.setInterval(() => {
-      if (auth.currentUser) void load().catch(() => {});
-    }, 60_000);
+      if (auth.currentUser && document.visibilityState === "visible") {
+        void load().catch(() => {});
+      }
+    }, 10 * 60_000);
     return () => {
       cancelled = true;
       unsub();

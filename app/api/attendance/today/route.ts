@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { DocumentSnapshot } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase/admin";
 import { requireBearerUser } from "@/lib/auth/verify-request";
 import { jsonError } from "@/lib/api/json-error";
@@ -11,8 +12,46 @@ import {
   DEFAULT_CHECKOUT_GRACE_MINUTES,
   type CheckoutWindowState,
 } from "@/lib/site/work-window";
+import { todayCache } from "@/lib/cache/today-cache";
 
 export const runtime = "nodejs";
+
+// Cache per "uid:workerId:day" — 60s TTL.
+// With the 45s client poll interval this ensures every second poll is a cache hit (50% read saving).
+const CACHE_TTL_MS = 60_000;
+
+// User doc cache — 5 min TTL. role/timeZone/assignedSites rarely change.
+const userDocCache = new Map<string, { data: Record<string, unknown>; expiresAt: number }>();
+const USER_CACHE_TTL_MS = 5 * 60_000;
+
+// Site doc cache — 5 min TTL. Site config (workday times, name) rarely changes.
+const siteDocCache = new Map<string, { data: Record<string, unknown> | null; expiresAt: number }>();
+const SITE_CACHE_TTL_MS = 5 * 60_000;
+
+type Db = ReturnType<typeof adminDb>;
+
+/** Returns a minimal DocumentSnapshot proxy backed by cached plain data. */
+function snapProxy(data: Record<string, unknown>): DocumentSnapshot {
+  return { get: (f: string) => data[f], exists: true } as unknown as DocumentSnapshot;
+}
+
+async function getCachedUserSnap(db: Db, uid: string): Promise<DocumentSnapshot> {
+  const hit = userDocCache.get(uid);
+  if (hit && hit.expiresAt > Date.now()) return snapProxy(hit.data);
+  const real = await db.collection("users").doc(uid).get();
+  const data = (real.exists ? real.data() : {}) ?? {};
+  userDocCache.set(uid, { data, expiresAt: Date.now() + USER_CACHE_TTL_MS });
+  return real;
+}
+
+async function getCachedSiteData(db: Db, siteId: string): Promise<Record<string, unknown> | null> {
+  const hit = siteDocCache.get(siteId);
+  if (hit && hit.expiresAt > Date.now()) return hit.data;
+  const real = await db.collection("sites").doc(siteId).get();
+  const data = real.exists ? (real.data() ?? null) : null;
+  siteDocCache.set(siteId, { data, expiresAt: Date.now() + SITE_CACHE_TTL_MS });
+  return data;
+}
 
 function tsMs(v: unknown): number | null {
   if (
@@ -32,14 +71,21 @@ export async function GET(req: Request) {
   const decoded = auth.decoded;
 
   const db = adminDb();
-  const callerSnap = await db.collection("users").doc(decoded.uid).get();
   const url = new URL(req.url);
   const workerIdRaw = url.searchParams.get("workerId")?.trim() || decoded.uid;
+  const dayParam = url.searchParams.get("day")?.trim() ?? "";
+  const cacheKey = `${decoded.uid}:${workerIdRaw}:${dayParam}`;
+  const cached = todayCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return NextResponse.json(cached.data);
+  }
+
+  const callerSnap = await getCachedUserSnap(db, decoded.uid);
 
   let workerId = decoded.uid;
   let workerSnap = callerSnap;
   if (workerIdRaw !== decoded.uid) {
-    const subjectSnap = await db.collection("users").doc(workerIdRaw).get();
+    const subjectSnap = await getCachedUserSnap(db, workerIdRaw);
     if (!subjectSnap.exists) return jsonError("Worker not found", 404);
     if (!canRecordAttendanceFor(callerSnap, subjectSnap)) {
       return jsonError("Not allowed to view attendance for this worker", 403);
@@ -57,7 +103,7 @@ export async function GET(req: Request) {
   const attRef = db.collection("attendance").doc(`${workerId}_${day}`);
   const attSnap = await attRef.get();
   if (!attSnap.exists) {
-    return NextResponse.json({
+    const noRecordData = {
       day,
       hasRecord: false,
       siteId: null,
@@ -70,7 +116,9 @@ export async function GET(req: Request) {
       scheduleTimeZone: null as string | null,
       checkoutGraceMinutes: null as number | null,
       checkoutWindowState: null as CheckoutWindowState | null,
-    } as const);
+    } as const;
+    todayCache.set(cacheKey, { data: noRecordData, expiresAt: Date.now() + CACHE_TTL_MS });
+    return NextResponse.json(noRecordData);
   }
 
   const data = attSnap.data()!;
@@ -83,9 +131,8 @@ export async function GET(req: Request) {
   let checkoutGraceMinutes: number | null = null;
 
   if (siteId) {
-    const siteSnap = await db.collection("sites").doc(siteId).get();
-    if (siteSnap.exists) {
-      const s = siteSnap.data()!;
+    const s = await getCachedSiteData(db, siteId);
+    if (s) {
       siteName = typeof s.name === "string" ? s.name : siteId;
       workdayStartUtc =
         typeof s.workdayStartUtc === "string" ? s.workdayStartUtc : null;
@@ -132,15 +179,12 @@ export async function GET(req: Request) {
     if (typeof o.toSiteId === "string") siteIds.add(o.toSiteId);
   }
   const siteNamesById: Record<string, string> = {};
-  for (const id of siteIds) {
-    const s = await db.collection("sites").doc(id).get();
-    if (s.exists) {
-      const n = s.data()?.name;
-      siteNamesById[id] = typeof n === "string" ? n : id;
-    } else {
-      siteNamesById[id] = id;
-    }
-  }
+  await Promise.all(
+    Array.from(siteIds).map(async (id) => {
+      const s = await getCachedSiteData(db, id);
+      siteNamesById[id] = typeof s?.name === "string" ? s.name : id;
+    })
+  );
 
   const siteSwitchLogs = rawLogs.map((log) => {
     if (!log || typeof log !== "object") return log;
@@ -188,7 +232,7 @@ export async function GET(req: Request) {
     };
   });
 
-  return NextResponse.json({
+  const todayData = {
     day,
     hasRecord: true,
     siteId,
@@ -214,5 +258,7 @@ export async function GET(req: Request) {
         }
       : null,
     siteSwitchLogs,
-  });
+  };
+  todayCache.set(cacheKey, { data: todayData, expiresAt: Date.now() + CACHE_TTL_MS });
+  return NextResponse.json(todayData);
 }

@@ -257,14 +257,30 @@ function EmployeeWorkPanelsInner() {
 
   React.useEffect(() => {
     void refreshState();
-    const t = window.setInterval(() => void refreshState(), 45_000);
     const onUpdated = () => void refreshState();
+    // Refresh immediately when the user switches back to this tab.
+    const onVisible = () => { if (document.visibilityState === "visible") void refreshState(); };
     window.addEventListener("attendance-updated", onUpdated);
+    document.addEventListener("visibilitychange", onVisible);
+    // No periodic poll once work is done — state won't change for the rest of the day.
+    if (isWorkDone) {
+      return () => {
+        window.removeEventListener("attendance-updated", onUpdated);
+        document.removeEventListener("visibilitychange", onVisible);
+      };
+    }
+    // Active session: poll every 45s to catch auto-checkout / window state changes.
+    // No session yet: poll every 3 min — just need to detect work-window opening.
+    // Skip the tick entirely when the tab is hidden — zero reads while minimized.
+    const t = window.setInterval(() => {
+      if (document.visibilityState === "visible") void refreshState();
+    }, hasOpenSession ? 45_000 : 3 * 60_000);
     return () => {
       window.clearInterval(t);
       window.removeEventListener("attendance-updated", onUpdated);
+      document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [refreshState]);
+  }, [refreshState, isWorkDone, hasOpenSession]);
 
   // Fire context-aware toasts once data is loaded + focus action is known
   React.useEffect(() => {

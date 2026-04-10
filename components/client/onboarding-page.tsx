@@ -36,8 +36,9 @@ export function OnboardingPage() {
         },
         body: JSON.stringify({ designation: trimmed }),
       });
-      const data = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Failed");
+      let data: { error?: string } = {};
+      try { data = (await res.json()) as { error?: string }; } catch { /* empty body */ }
+      if (!res.ok) throw new Error(data.error ?? "Server error, please try again");
       router.replace("/dashboard/employee");
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Failed");
