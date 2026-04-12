@@ -26,6 +26,7 @@ import { getGpsFix, type GpsResult } from "@/lib/client/geolocation";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase/client";
 import { calendarDateKeyInTimeZone } from "@/lib/date/calendar-day-key";
 import { normalizeTimeZoneId } from "@/lib/date/time-zone";
+import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 type Site = { id: string; name?: string };
@@ -48,6 +49,7 @@ export function EmployeeSiteSwitchPanel({
   subjectTimeZone?: string;
 } = {}) {
   const { user } = useDashboardUser();
+  const pathname = usePathname();
   const [expanded, setExpanded] = React.useState(false);
   const [sites, setSites] = React.useState<Site[]>([]);
   const [siteNames, setSiteNames] = React.useState<Record<string, string>>({});
@@ -66,6 +68,10 @@ export function EmployeeSiteSwitchPanel({
   const camRef = React.useRef<CameraCaptureHandle>(null);
 
   React.useEffect(() => {
+    const n = pathname.replace(/\/$/, "") || "/";
+    if (n === "/dashboard/employee/switch") {
+      setExpanded(true);
+    }
     const syncHash = () => {
       if (typeof window === "undefined") return;
       if (window.location.hash === "#employee-site-switch") {
@@ -75,7 +81,7 @@ export function EmployeeSiteSwitchPanel({
     syncHash();
     window.addEventListener("hashchange", syncHash);
     return () => window.removeEventListener("hashchange", syncHash);
-  }, []);
+  }, [pathname]);
 
   const authHeaders = React.useCallback(async () => {
     const auth = getFirebaseAuth();

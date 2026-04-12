@@ -9,7 +9,7 @@ type LiveTrackingCtx = {
 };
 
 const LiveTrackingContext = React.createContext<LiveTrackingCtx>({
-  on: true,
+  on: false,
   setOn: () => {},
 });
 
@@ -18,7 +18,8 @@ export function useLiveTracking() {
 }
 
 export function LiveTrackingProvider({ children }: { children: React.ReactNode }) {
-  const [on, setOn] = React.useState(true);
+  /** Off by default — no employee-facing toggle; avoids silent GPS pings. */
+  const [on, setOn] = React.useState(false);
 
   return (
     <LiveTrackingContext.Provider value={{ on, setOn }}>

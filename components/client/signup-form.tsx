@@ -63,7 +63,7 @@ export function SignupForm() {
         cred.user.email?.split("@")[0] ||
         "Employee";
       await ensureEmployeeUserDoc(cred.user, display);
-      router.replace("/dashboard/employee");
+      router.replace("/dashboard/employee/check-in");
     } catch (e) {
       setError(firebaseErrorMessage(e));
     } finally {
@@ -86,7 +86,7 @@ export function SignupForm() {
       const display =
         (name.trim() || u.displayName || u.email.split("@")[0] || "Employee").trim();
       await ensureEmployeeUserDoc(u, display);
-      router.replace("/dashboard/employee");
+      router.replace("/dashboard/employee/check-in");
     } catch (e) {
       setError(firebaseErrorMessage(e));
     } finally {

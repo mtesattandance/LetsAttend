@@ -66,7 +66,6 @@ export function AdminUsersPanel() {
   const [calendarOpen, setCalendarOpen] = React.useState(false);
   const [calendarWorkerId, setCalendarWorkerId] = React.useState("");
   const [mounted, setMounted] = React.useState(false);
-
   React.useEffect(() => {
     setMounted(true);
   }, []);

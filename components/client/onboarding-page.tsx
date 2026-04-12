@@ -39,7 +39,7 @@ export function OnboardingPage() {
       let data: { error?: string } = {};
       try { data = (await res.json()) as { error?: string }; } catch { /* empty body */ }
       if (!res.ok) throw new Error(data.error ?? "Server error, please try again");
-      router.replace("/dashboard/employee");
+      router.replace("/dashboard/employee/check-in");
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Failed");
     } finally {

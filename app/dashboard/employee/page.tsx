@@ -9,7 +9,8 @@ export default function EmployeeDashboardPage() {
       <div className="mb-6 md:mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">Work</h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Track your daily attendance from one place. Site switch and check-out appear after you check in.
+          All steps on one page. You can also use the sidebar <strong className="text-zinc-700 dark:text-zinc-300">Check in</strong>,{" "}
+          <strong className="text-zinc-700 dark:text-zinc-300">Check out</strong>, and <strong className="text-zinc-700 dark:text-zinc-300">Switch</strong> for each step alone.
         </p>
       </div>
       <EmployeeDesignationCard />

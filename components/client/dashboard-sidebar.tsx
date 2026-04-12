@@ -5,24 +5,28 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as React from "react";
 import {
-  Building2,
+  ArrowLeftRight,
   Calendar,
   CalendarClock,
+  CircleStop,
   ClipboardList,
-  Clock,
   ListChecks,
   Home,
   LayoutDashboard,
+  LogIn,
   LogOut,
   MapPin,
   Radio,
   Settings,
   ChevronDown,
   ChevronUp,
+  Inbox,
   UserPlus,
   Users,
   X,
   FileDown,
+  UserCircle2,
+  DollarSign,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -58,9 +62,9 @@ export function DashboardSidebar({ mobileOpen, onCloseMobile }: Props) {
     user?.role === "super_admin";
 
   const employeeNav: { href: string; label: string; icon: typeof LayoutDashboard }[] = [
-    { href: "/dashboard/employee", label: "Work", icon: LayoutDashboard },
-    { href: "/dashboard/employee/overtime", label: "Overtime", icon: Clock },
-    { href: "/dashboard/employee/offsite", label: "Off-site", icon: Building2 },
+    { href: "/dashboard/employee/check-in", label: "Check in", icon: LogIn },
+    { href: "/dashboard/employee/check-out", label: "Check out", icon: CircleStop },
+    { href: "/dashboard/employee/switch", label: "Switch", icon: ArrowLeftRight },
     { href: "/dashboard/employee/friend", label: "Friend check-in", icon: UserPlus },
     { href: "/dashboard/employee/assigned", label: "Assigned", icon: ClipboardList },
     { href: "/dashboard/employee/calendar", label: "Calendar", icon: Calendar },
@@ -79,12 +83,21 @@ export function DashboardSidebar({ mobileOpen, onCloseMobile }: Props) {
       { href: `${adminBase}/workers`, label: "Workers", icon: Users },
       { href: `${adminBase}/assignments`, label: "Assignments", icon: ListChecks },
       { href: `${adminBase}/sites`, label: "Sites", icon: MapPin },
-      { href: `${adminBase}/overtime`, label: "Overtime", icon: Clock },
-      { href: `${adminBase}/offsite`, label: "Off-site", icon: Building2 },
+      { href: `${adminBase}/requests`, label: "Requests", icon: Inbox },
       {
         href: `${adminBase}/working-hours`,
         label: "Working hours",
         icon: CalendarClock,
+      },
+      {
+        href: `${adminBase}/employee`,
+        label: "Employee",
+        icon: UserCircle2,
+      },
+      {
+        href: `${adminBase}/salary-edit`,
+        label: "Salary Edit",
+        icon: DollarSign,
       },
       {
         href: `${adminBase}/reports`,
@@ -104,11 +117,10 @@ export function DashboardSidebar({ mobileOpen, onCloseMobile }: Props) {
     return p === href.replace(/\/$/, "") || p.startsWith(`${href.replace(/\/$/, "")}/`);
   }
 
-  const employeeHome = "/dashboard/employee";
   function employeeLinkActive(href: string): boolean {
     const p = pathname.replace(/\/$/, "") || "/";
-    if (href === employeeHome) return p === employeeHome;
-    return p === href.replace(/\/$/, "") || p.startsWith(`${href.replace(/\/$/, "")}/`);
+    const h = href.replace(/\/$/, "") || "/";
+    return p === h || p.startsWith(`${h}/`);
   }
 
   const bottomLinks = [

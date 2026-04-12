@@ -43,13 +43,13 @@ export function LandingHeroButtons() {
       <div className="flex w-full max-w-3xl flex-col items-center gap-4">
         <div className="flex w-full flex-wrap items-center justify-center gap-3">
           <Button asChild size="lg" className={cn(actionBtn, "shadow-lg shadow-violet-500/25")}>
-            <Link href="/dashboard/employee#employee-check-in">
+            <Link href="/dashboard/employee/check-in">
               <LogIn className="size-[1.05rem]" aria-hidden />
               Check in
             </Link>
           </Button>
           <Button asChild size="lg" variant="outline" className={actionBtn}>
-            <Link href="/dashboard/employee#employee-check-out">
+            <Link href="/dashboard/employee/check-out">
               <LogOut className="size-[1.05rem]" aria-hidden />
               Check out
             </Link>
@@ -63,19 +63,19 @@ export function LandingHeroButtons() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="center" className="w-52">
               <DropdownMenuItem asChild>
-                <Link href="/dashboard/employee/overtime" className="flex items-center gap-2">
+                <Link href="/dashboard/employee/requests/overtime" className="flex items-center gap-2">
                   <Clock className="size-4" aria-hidden />
                   Overtime
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/dashboard/employee#employee-site-switch" className="flex items-center gap-2">
+                <Link href="/dashboard/employee/switch" className="flex items-center gap-2">
                   <ArrowRightLeft className="size-4" aria-hidden />
                   Switch site
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/dashboard/employee/offsite" className="flex items-center gap-2">
+                <Link href="/dashboard/employee/requests/offsite" className="flex items-center gap-2">
                   <Building2 className="size-4" aria-hidden />
                   Off-site work
                 </Link>
@@ -101,7 +101,7 @@ export function LandingHeroButtons() {
           size="sm"
           className="gap-1.5 rounded-full border-zinc-300 px-5 text-zinc-700 dark:text-zinc-200"
         >
-          <Link href="/dashboard/employee">
+          <Link href="/dashboard/employee/check-in">
             <LayoutDashboard className="size-3.5 opacity-80" aria-hidden />
             Open full dashboard
             <ArrowRight className="size-3.5 opacity-70" aria-hidden />

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import { Bell, CheckCheck, ArrowLeft, ExternalLink } from "lucide-react";
 import { getFirebaseAuth } from "@/lib/firebase/client";
@@ -26,6 +27,9 @@ const KIND_META: Record<string, { label: string; color: string }> = {
   offsite_request:  { label: "Off-site request",  color: "text-violet-400" },
   offsite_approved: { label: "Off-site approved", color: "text-emerald-400" },
   offsite_rejected: { label: "Off-site rejected", color: "text-red-400" },
+  login_request:    { label: "Login request",     color: "text-sky-400" },
+  login_approved:   { label: "Login approved",    color: "text-emerald-400" },
+  login_rejected:   { label: "Login rejected",    color: "text-red-400" },
   system:           { label: "System",            color: "text-zinc-400" },
 };
 
@@ -39,6 +43,7 @@ function fmtTime(row: Row): string {
 }
 
 export function NotificationsPage() {
+  const pathname = usePathname();
   const [items, setItems] = React.useState<Row[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [marking, setMarking] = React.useState(false);
@@ -51,9 +56,10 @@ export function NotificationsPage() {
     return { Authorization: `Bearer ${token}` };
   }, []);
 
-  const load = React.useCallback(async () => {
+  const load = React.useCallback(async (opts?: { fresh?: boolean }) => {
     const h = await authHeaders();
-    const res = await fetch("/api/notifications", { headers: h });
+    const q = opts?.fresh ? "?fresh=1" : "";
+    const res = await fetch(`/api/notifications${q}`, { headers: h, cache: "no-store" });
     const data = (await res.json()) as { items?: Row[]; error?: string };
     if (!res.ok) throw new Error(data.error ?? "Failed to load");
     setItems(data.items ?? []);
@@ -65,12 +71,18 @@ export function NotificationsPage() {
     const unsub = onAuthStateChanged(auth, (u) => {
       if (!u) { setItems([]); setLoading(false); return; }
       setLoading(true);
-      void load()
+      void load({ fresh: true })
         .catch(() => {})
         .finally(() => { if (!cancelled) setLoading(false); });
     });
     return () => { cancelled = true; unsub(); };
   }, [load]);
+
+  React.useEffect(() => {
+    const auth = getFirebaseAuth();
+    if (!auth.currentUser) return;
+    void load({ fresh: true }).catch(() => {});
+  }, [pathname, load]);
 
   const markAll = async () => {
     const ids = items.filter((i) => !i.read).map((i) => i.id);
@@ -83,7 +95,7 @@ export function NotificationsPage() {
         headers: { ...h, "Content-Type": "application/json" },
         body: JSON.stringify({ ids }),
       });
-      await load();
+      await load({ fresh: true });
     } catch { /* ignore */ } finally { setMarking(false); }
   };
 
@@ -106,7 +118,7 @@ export function NotificationsPage() {
       {/* Header */}
       <div className="mb-6 flex items-center gap-3">
         <Button asChild variant="ghost" size="icon" className="shrink-0">
-          <Link href="/dashboard/employee" aria-label="Back">
+          <Link href="/dashboard/employee/check-in" aria-label="Back">
             <ArrowLeft className="size-5" />
           </Link>
         </Button>

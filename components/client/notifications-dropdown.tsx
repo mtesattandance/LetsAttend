@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Bell, ExternalLink } from "lucide-react";
@@ -53,6 +54,7 @@ function workHrefFromRow(row: Row): string {
 }
 
 export function NotificationsDropdown() {
+  const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
   const [items, setItems] = React.useState<Row[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -66,9 +68,10 @@ export function NotificationsDropdown() {
     return { Authorization: `Bearer ${token}` };
   }, []);
 
-  const load = React.useCallback(async () => {
+  const load = React.useCallback(async (opts?: { fresh?: boolean }) => {
     const h = await authHeaders();
-    const res = await fetch("/api/notifications", { headers: h });
+    const q = opts?.fresh ? "?fresh=1" : "";
+    const res = await fetch(`/api/notifications${q}`, { headers: h, cache: "no-store" });
     const data = (await res.json()) as { items?: Row[]; error?: string };
     if (!res.ok) throw new Error(data.error ?? "Failed to load");
     setItems(data.items ?? []);
@@ -85,7 +88,7 @@ export function NotificationsDropdown() {
       void (async () => {
         setLoading(true);
         try {
-          await load();
+          await load({ fresh: true });
         } catch {
           if (!cancelled) setItems([]);
         } finally {
@@ -97,7 +100,7 @@ export function NotificationsDropdown() {
     // Also skip the poll when the browser tab is hidden (user isn't looking).
     const id = window.setInterval(() => {
       if (auth.currentUser && document.visibilityState === "visible") {
-        void load().catch(() => {});
+        void load({ fresh: true }).catch(() => {});
       }
     }, 10 * 60_000);
     return () => {
@@ -109,9 +112,16 @@ export function NotificationsDropdown() {
 
   React.useEffect(() => {
     if (open) {
-      void load();
+      void load({ fresh: true });
     }
   }, [open, load]);
+
+  /** Route changes should not show a stale bell list from the in-memory server cache. */
+  React.useEffect(() => {
+    const auth = getFirebaseAuth();
+    if (!auth.currentUser) return;
+    void load({ fresh: true }).catch(() => {});
+  }, [pathname, load]);
 
   const unread = items.filter((i) => !i.read).length;
 
@@ -133,7 +143,7 @@ export function NotificationsDropdown() {
         headers: { ...h, "Content-Type": "application/json" },
         body: JSON.stringify({ ids }),
       });
-      await load();
+      await load({ fresh: true });
     } catch {
       /* ignore */
     }
@@ -148,7 +158,7 @@ export function NotificationsDropdown() {
         headers: { ...h, "Content-Type": "application/json" },
         body: JSON.stringify({ ids }),
       });
-      await load();
+      await load({ fresh: true });
     } catch {
       /* ignore */
     }
@@ -175,13 +185,13 @@ export function NotificationsDropdown() {
       <DropdownMenu.Portal>
         <DropdownMenu.Content
           className={cn(
-            "z-[100] max-h-[min(70vh,28rem)] w-[min(100vw-2rem,22rem)] overflow-hidden rounded-2xl border border-zinc-200/90",
+            "z-[2000] flex max-h-[min(85vh,32rem)] w-[min(100vw-2rem,24rem)] flex-col overflow-hidden rounded-2xl border border-zinc-200/90",
             "bg-white/95 p-0 shadow-2xl backdrop-blur-md dark:border-white/10 dark:bg-zinc-950/95"
           )}
           sideOffset={8}
           align="end"
         >
-          <div className="flex items-center justify-between border-b border-zinc-200/80 px-4 py-3 dark:border-white/10">
+          <div className="flex shrink-0 items-center justify-between border-b border-zinc-200/80 px-4 py-3 dark:border-white/10">
             <span className="text-sm font-semibold">Notifications</span>
             {unread > 0 ? (
               <button
@@ -193,7 +203,7 @@ export function NotificationsDropdown() {
               </button>
             ) : null}
           </div>
-          <div className="max-h-[min(60vh,24rem)] overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             {loading && items.length === 0 ? (
               <NotificationsListSkeleton rows={5} />
             ) : items.length === 0 ? (
@@ -208,11 +218,11 @@ export function NotificationsDropdown() {
                       !row.read ? "bg-cyan-500/10 dark:bg-cyan-500/5" : "bg-transparent"
                     )}
                   >
-                    <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                    <p className="break-words text-sm font-medium text-zinc-900 dark:text-zinc-100">
                       {row.title ?? "Notice"}
                     </p>
                     {row.body ? (
-                      <p className="mt-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+                      <p className="mt-1 break-words text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
                         {row.body}
                       </p>
                     ) : null}
@@ -270,7 +280,7 @@ export function NotificationsDropdown() {
             )}
           </div>
           {/* View all footer */}
-          <div className="border-t border-zinc-200/80 px-4 py-2.5 dark:border-white/10">
+          <div className="shrink-0 border-t border-zinc-200/80 px-4 py-2.5 dark:border-white/10">
             <Link
               href="/dashboard/employee/notifications"
               className="flex items-center justify-center gap-1.5 text-xs font-medium text-cyan-600 hover:text-cyan-700 dark:text-cyan-400 dark:hover:text-cyan-300"

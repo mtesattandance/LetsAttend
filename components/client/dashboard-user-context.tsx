@@ -13,6 +13,10 @@ export type DashboardUser = {
   role: string;
   designation?: string;
   employeeId?: string;
+  /**
+   * Employee workspace gate after onboarding. Undefined = legacy accounts (treated as approved).
+   */
+  workspaceAccessStatus?: "pending" | "approved" | "rejected";
   /** Employee work sites (from Firestore). Empty until an admin assigns. */
   assignedSites: string[];
   /** IANA timezone for attendance calendar days (falls back if unset). */
@@ -71,6 +75,11 @@ export function DashboardUserProvider({ children }: { children: React.ReactNode 
             typeof data?.designation === "string" ? data.designation.trim() : "";
           const employeeId =
             typeof data?.employeeId === "string" ? data.employeeId.trim() : "";
+          const rawWs = data?.workspaceAccessStatus;
+          const workspaceAccessStatus =
+            rawWs === "pending" || rawWs === "approved" || rawWs === "rejected"
+              ? rawWs
+              : undefined;
 
           if (email && snap.exists() && fsEmail !== email) {
             try {
@@ -87,6 +96,7 @@ export function DashboardUserProvider({ children }: { children: React.ReactNode 
             role,
             designation,
             employeeId,
+            workspaceAccessStatus,
             assignedSites,
             timeZone,
           });
@@ -105,6 +115,7 @@ export function DashboardUserProvider({ children }: { children: React.ReactNode 
                     SUPER_ADMIN_EMAIL && u.email === SUPER_ADMIN_EMAIL ? "super_admin" : "employee",
                   designation: "",
                   employeeId: "",
+                  workspaceAccessStatus: undefined,
                   assignedSites: [],
                   timeZone: normalizeTimeZoneId(undefined),
                 }

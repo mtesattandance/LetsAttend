@@ -6,7 +6,7 @@ export default function AdminDashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <RequireRole allowedRoles={["admin", "super_admin"]} fallbackTo="/dashboard/employee">
+    <RequireRole allowedRoles={["admin", "super_admin"]} fallbackTo="/dashboard/employee/check-in">
       {children}
     </RequireRole>
   );

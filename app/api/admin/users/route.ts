@@ -26,7 +26,9 @@ export async function GET(req: Request) {
     return jsonError("Forbidden", 403);
   }
 
-  if (usersCache && usersCache.expiresAt > Date.now()) {
+  const skipCache = new URL(req.url).searchParams.get("fresh") === "1";
+
+  if (!skipCache && usersCache && usersCache.expiresAt > Date.now()) {
     const isSuperAdmin = isSuperAdminDecoded(decoded);
     const users = isSuperAdmin
       ? usersCache.users
@@ -49,6 +51,9 @@ export async function GET(req: Request) {
           employeeId = await claimEmployeeId(db);
           await d.ref.set({ employeeId }, { merge: true });
         }
+        const ws = data.workspaceAccessStatus;
+        const workspaceAccessStatus =
+          ws === "pending" || ws === "approved" || ws === "rejected" ? ws : undefined;
         return {
           id: d.id,
           employeeId,
@@ -59,6 +64,7 @@ export async function GET(req: Request) {
           timeZone: normalizeTimeZoneId(
             typeof data.timeZone === "string" ? data.timeZone : undefined
           ),
+          ...(workspaceAccessStatus ? { workspaceAccessStatus } : {}),
         };
       })
     );

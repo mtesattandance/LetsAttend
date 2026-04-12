@@ -133,7 +133,7 @@ export async function POST(req: Request) {
           title: "Overtime submitted for approval",
           body: `${workerLabel} completed overtime (check-in/out with GPS + selfie) for ${workDate}.`,
           kind: "overtime_request",
-          link: "/dashboard/admin/overtime",
+          link: "/dashboard/admin/requests?tab=overtime",
         })
       )
     );

@@ -95,7 +95,7 @@ export async function PATCH(
             ? `Your overtime request for ${existing.date ?? ""} was rejected. Note: ${parsed.data.note.slice(0, 200)}`
             : `Your overtime request for ${existing.date ?? ""} was rejected.`,
           kind: "overtime_rejected",
-          link: "/dashboard/employee/overtime",
+          link: "/dashboard/employee/requests/overtime",
         });
       } catch { /* non-critical */ }
     }
@@ -148,7 +148,7 @@ export async function PATCH(
         title: "Overtime request approved ✓",
         body: `Your completed overtime for ${existing.date ?? ""} has been approved.`,
         kind: "overtime_approved",
-        link: "/dashboard/employee/overtime",
+        link: "/dashboard/employee/requests/overtime",
       });
     } catch { /* non-critical */ }
   }

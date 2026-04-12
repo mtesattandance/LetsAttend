@@ -133,10 +133,10 @@ export function EmployeeAssignedPage() {
                 </Button>
               ) : null}
               <Button asChild variant="secondary" size="sm">
-                <Link href="/dashboard/employee">Open Work (normal check-in)</Link>
+                <Link href="/dashboard/employee/check-in">Open Check in</Link>
               </Button>
               <Button asChild variant="ghost" size="sm">
-                <Link href="/dashboard/employee#employee-check-in">Jump to check-in (no focus)</Link>
+                <Link href="/dashboard/employee/check-in">Jump to Check in</Link>
               </Button>
             </div>
           </CardContent>

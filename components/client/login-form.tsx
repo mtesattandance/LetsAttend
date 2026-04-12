@@ -62,7 +62,7 @@ export function LoginForm() {
       }
 
       await ensureEmployeeUserDoc(u, displayName);
-      router.replace("/dashboard/employee");
+      router.replace("/dashboard/employee/check-in");
     } catch (e) {
       const code =
         e && typeof e === "object" && "code" in e
@@ -105,7 +105,7 @@ export function LoginForm() {
       const name = u.displayName ?? u.email.split("@")[0] ?? "Employee";
       await ensureEmployeeUserDoc(u, name);
 
-      router.replace("/dashboard/employee");
+      router.replace("/dashboard/employee/check-in");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Google sign-in failed.";
       setError(msg);

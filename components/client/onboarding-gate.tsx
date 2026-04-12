@@ -20,7 +20,7 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
       return;
     }
     if (!needsOnboarding && onOnboardingPage) {
-      router.replace("/dashboard/employee");
+      router.replace("/dashboard/employee/check-in");
     }
   }, [loading, pathname, router, user]);
 

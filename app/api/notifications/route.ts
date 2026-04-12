@@ -23,9 +23,13 @@ export async function GET(req: Request) {
   if (!auth.ok) return auth.response;
   const { uid } = auth.decoded;
 
-  const cached = notifCache.get(uid);
-  if (cached && cached.expiresAt > Date.now()) {
-    return NextResponse.json({ items: cached.items });
+  const skipCache = new URL(req.url).searchParams.get("fresh") === "1";
+
+  if (!skipCache) {
+    const cached = notifCache.get(uid);
+    if (cached && cached.expiresAt > Date.now()) {
+      return NextResponse.json({ items: cached.items });
+    }
   }
 
   try {
@@ -40,10 +44,12 @@ export async function GET(req: Request) {
     const items = snap.docs
       .map((d) => ({ d, ms: createdAtMs(d.data() as Record<string, unknown>) }))
       .sort((a, b) => b.ms - a.ms)
-      .slice(0, 40)
+      .slice(0, 60)
       .map(({ d }) => serializeFirestoreForJson({ id: d.id, ...d.data() }));
 
-    notifCache.set(uid, { items, expiresAt: Date.now() + CACHE_TTL_MS });
+    if (!skipCache) {
+      notifCache.set(uid, { items, expiresAt: Date.now() + CACHE_TTL_MS });
+    }
     return NextResponse.json({ items });
   } catch {
     // Quota exceeded or other Firestore error — serve stale cache if available, else empty

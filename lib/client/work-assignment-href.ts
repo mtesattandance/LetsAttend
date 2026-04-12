@@ -5,5 +5,5 @@ export function workCheckInHrefFromAssignedSiteIds(assignedSiteIds: string[]): s
   if (assignedSiteIds.length > 0) {
     params.set("assignmentSites", assignedSiteIds.join(","));
   }
-  return `/dashboard/employee?${params.toString()}#employee-check-in`;
+  return `/dashboard/employee/check-in?${params.toString()}`;
 }

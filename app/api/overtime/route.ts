@@ -67,7 +67,7 @@ export async function POST(req: Request) {
         title: "New overtime request",
         body: `${workerLabel} has requested overtime for ${parsed.data.date}. Reason: ${parsed.data.reason.slice(0, 120)}`,
         kind: "overtime_request",
-        link: "/dashboard/admin/overtime",
+        link: "/dashboard/admin/requests?tab=overtime",
       })
     ));
   } catch { /* non-critical */ }

@@ -15,7 +15,10 @@ export async function createNotification(
       | "overtime_rejected"
       | "offsite_request"
       | "offsite_approved"
-      | "offsite_rejected";
+      | "offsite_rejected"
+      | "login_request"
+      | "login_approved"
+      | "login_rejected";
     /** For assignment: sites the worker may use for check-in (drives Work deep link). */
     assignedSiteIds?: string[];
     /** Optional link for CTAs in the notification page. */

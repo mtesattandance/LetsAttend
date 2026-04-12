@@ -74,7 +74,7 @@ function EmployeeCheckInPanelSkeleton() {
   );
 }
 
-const WORK_HOME_PATH = "/dashboard/employee";
+const ASSIGNMENT_CHECKIN_PATHS = new Set(["/dashboard/employee", "/dashboard/employee/check-in"]);
 
 function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
   const router = useRouter();
@@ -83,13 +83,13 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
   const { user } = useDashboardUser();
   /**
    * Set only when landing with `?fromAssignment=1` from the bell “Go to Work” link.
-   * Cleared when leaving the main Work page, after successful check-in, or on full refresh (no URL flag).
+   * Cleared when leaving the Work / Check-in pages, after successful check-in, or on full refresh (no URL flag).
    */
   const [assignmentFilterIds, setAssignmentFilterIds] = React.useState<string[] | null>(null);
 
   React.useEffect(() => {
     const normalized = pathname.replace(/\/$/, "") || "/";
-    if (normalized !== WORK_HOME_PATH) {
+    if (!ASSIGNMENT_CHECKIN_PATHS.has(normalized)) {
       setAssignmentFilterIds(null);
     }
   }, [pathname]);
@@ -226,7 +226,7 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
     }
 
     resetCaptureFlow();
-    router.replace(`${WORK_HOME_PATH}#employee-check-in`, { scroll: false });
+    router.replace("/dashboard/employee/check-in", { scroll: false });
   }, [queryKey, router, resetCaptureFlow]);
 
   /** Notification / Assigned-tab “suggested” sites — only used for default pick + banner, not for hiding other sites. */
@@ -693,7 +693,7 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
 
                       <div className="mt-5 flex flex-wrap justify-center gap-3 sm:justify-start">
                         <Link
-                          href="/dashboard/employee/overtime"
+                          href="/dashboard/employee/requests/overtime"
                           className={cn(
                             "inline-flex min-w-[140px] items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold hover:opacity-90",
                             workWindow === "late" || workWindow === "missed_check_in"

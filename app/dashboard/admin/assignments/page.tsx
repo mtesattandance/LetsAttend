@@ -3,7 +3,7 @@ import { RequireRole } from "@/components/client/require-role";
 
 export default function AdminAssignmentsPage() {
   return (
-    <RequireRole allowedRoles={["admin", "super_admin"]} fallbackTo="/dashboard/employee">
+    <RequireRole allowedRoles={["admin", "super_admin"]} fallbackTo="/dashboard/employee/check-in">
       <div className="p-3 md:p-8">
         <div className="mb-6">
           <h1 className="text-2xl font-semibold tracking-tight">Assignments</h1>

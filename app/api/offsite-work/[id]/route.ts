@@ -98,7 +98,7 @@ export async function PATCH(
             ? `Your off-site work request for ${existing.date ?? ""} was rejected. Note: ${parsed.data.note.slice(0, 200)}`
             : `Your off-site work request for ${existing.date ?? ""} was rejected.`,
           kind: "offsite_rejected",
-          link: "/dashboard/employee/offsite",
+          link: "/dashboard/employee/requests/offsite",
         });
       } catch { /* non-critical */ }
     }
@@ -135,7 +135,7 @@ export async function PATCH(
         title: "Off-site work approved ✓",
         body: `Your off-site work request for ${existing.date ?? ""} (${start}–${end}) has been approved.`,
         kind: "offsite_approved",
-        link: "/dashboard/employee/offsite-work",
+        link: "/dashboard/employee/requests/offsite",
       });
     } catch { /* non-critical */ }
   }

@@ -105,7 +105,7 @@ export async function POST(req: Request) {
       title: "New off-site work request",
       body: `${workerLabel} requested off-site work for ${parsed.data.date} (${parsed.data.workStartHm}–${parsed.data.workEndHm}). Reason: ${parsed.data.reason.slice(0, 120)}`,
       kind: "offsite_request",
-      link: "/dashboard/admin/offsite",
+      link: "/dashboard/admin/requests?tab=offsite",
     });
   } catch { /* non-critical */ }
 
