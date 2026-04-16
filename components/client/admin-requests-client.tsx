@@ -6,12 +6,13 @@ import { cn } from "@/lib/utils";
 import { AdminLoginAccessPanel } from "@/components/client/admin-login-access-panel";
 import { AdminOvertimeRequestsPanel } from "@/components/client/admin-overtime-requests-panel";
 import { AdminOffsiteRequestsPanel } from "@/components/client/admin-offsite-requests-panel";
+import { AdminManualPunchRequestsPanel } from "@/components/client/admin-manual-punch-requests-panel";
 
-const TABS = ["login", "overtime", "offsite"] as const;
+const TABS = ["login", "overtime", "offsite", "manual"] as const;
 type Tab = (typeof TABS)[number];
 
 function normalizeTab(raw: string | null): Tab {
-  if (raw === "overtime" || raw === "offsite" || raw === "login") return raw;
+  if (raw === "overtime" || raw === "offsite" || raw === "login" || raw === "manual") return raw;
   return "login";
 }
 
@@ -19,6 +20,7 @@ const TAB_LABEL: Record<Tab, string> = {
   login: "Login access",
   overtime: "Overtime",
   offsite: "Off-site",
+  manual: "Late Request",
 };
 
 export function AdminRequestsClient() {
@@ -71,6 +73,7 @@ export function AdminRequestsClient() {
         {tab === "login" ? <AdminLoginAccessPanel /> : null}
         {tab === "overtime" ? <AdminOvertimeRequestsPanel embedded /> : null}
         {tab === "offsite" ? <AdminOffsiteRequestsPanel embedded /> : null}
+        {tab === "manual" ? <AdminManualPunchRequestsPanel embedded /> : null}
       </div>
     </div>
   );

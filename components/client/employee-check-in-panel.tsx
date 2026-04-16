@@ -548,7 +548,7 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
           </p>
         ) : null}
         {assignmentMismatch ? (
-          <p className="text-xs text-amber-200/90" role="status">
+          <p className="text-xs text-amber-600 dark:text-amber-200/90" role="status">
             None of the sites from this notification match your current list. Refresh the page or ask
             your admin if assignments changed.
           </p>

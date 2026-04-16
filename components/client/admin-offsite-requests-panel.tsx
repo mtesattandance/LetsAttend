@@ -18,7 +18,7 @@ import { DEFAULT_ATTENDANCE_TIME_ZONE } from "@/lib/date/time-zone";
 import { formatInstantDateTime12hInZone, formatWallHm12h } from "@/lib/time/format-wall-time";
 import { UtcTimePicker } from "@/components/client/utc-time-picker";
 import { useCalendarMode } from "@/components/client/calendar-mode-context";
-import { formatIsoForCalendar } from "@/lib/date/bs-calendar";
+import { formatIsoForCalendar, formatTimestampForMode, CalendarMode } from "@/lib/date/bs-calendar";
 import { cn } from "@/lib/utils";
 
 type Row = {
@@ -43,13 +43,10 @@ type Row = {
   requestGps?: { latitude?: number; longitude?: number; accuracyM?: number };
 };
 
-function fmt(v: unknown) {
+function fmt(v: unknown, mode: CalendarMode) {
   const s = getFirestoreSeconds(v);
   if (s == null) return "—";
-  return formatInstantDateTime12hInZone(s * 1000, DEFAULT_ATTENDANCE_TIME_ZONE, {
-    withSeconds: true,
-    withTimeZoneName: true,
-  });
+  return formatTimestampForMode(s * 1000, mode, DEFAULT_ATTENDANCE_TIME_ZONE);
 }
 
 function fmtGps(g: Row["requestGps"]) {
@@ -259,7 +256,7 @@ export function AdminOffsiteRequestsPanel({ embedded = false }: { embedded?: boo
       ) : (
         <p className="mb-4 text-sm text-zinc-500 dark:text-zinc-400">
           Approve with optional time edits. Request GPS only (no selfie). Workers submit from{" "}
-          <strong className="text-zinc-100">Employee → Requests → Off-site</strong>.
+          <strong className="text-zinc-900 dark:text-zinc-100">Employee → Requests → Off-site</strong>.
         </p>
       )}
 
@@ -301,11 +298,11 @@ export function AdminOffsiteRequestsPanel({ embedded = false }: { embedded?: boo
                   return (
                     <li
                       key={r.id}
-                      className="rounded-xl border border-white/10 bg-white/[0.02] p-4 text-sm"
+                      className="rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/[0.02] p-4 text-sm"
                     >
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div>
-                          <p className="font-medium text-zinc-100">
+                          <p className="font-medium text-zinc-900 dark:text-zinc-100">
                             {r.workerName ?? r.workerEmail ?? r.workerId ?? "Worker"}
                           </p>
                           <p className="text-xs text-zinc-500">
@@ -315,10 +312,10 @@ export function AdminOffsiteRequestsPanel({ embedded = false }: { embedded?: boo
                         <span
                           className={
                             r.status === "approved"
-                              ? "text-emerald-400"
+                              ? "text-emerald-600 dark:text-emerald-400"
                               : r.status === "rejected"
-                                ? "text-red-400"
-                                : "text-amber-200"
+                                ? "text-red-600 dark:text-red-400"
+                                : "text-amber-600 dark:text-amber-200"
                           }
                         >
                           {r.status ?? "pending"}
@@ -356,21 +353,21 @@ export function AdminOffsiteRequestsPanel({ embedded = false }: { embedded?: boo
                         </div>
                         <div>
                           <span className="text-zinc-500">Submitted: </span>
-                          {fmt(r.createdAt)}
+                          {fmt(r.createdAt, mode)}
                         </div>
                         {r.reviewedAt ? (
                           <div>
                             <span className="text-zinc-500">Reviewed: </span>
-                            {fmt(r.reviewedAt)}{" "}
+                            {fmt(r.reviewedAt, mode)}{" "}
                             {r.reviewedByEmail ? `· ${r.reviewedByEmail}` : ""}
                           </div>
                         ) : null}
                       </dl>
-                      <p className="mt-2 text-zinc-300">{r.reason ?? "—"}</p>
+                      <p className="mt-2 text-zinc-700 dark:text-zinc-300">{r.reason ?? "—"}</p>
 
                       {r.status === "pending" ? (
-                        <div className="mt-3 space-y-3 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] p-3">
-                          <p className="text-xs font-medium text-cyan-200/90">Edit before approve (local)</p>
+                        <div className="mt-3 space-y-3 rounded-lg border border-cyan-200 dark:border-cyan-500/20 bg-cyan-50 dark:bg-cyan-500/[0.04] p-3">
+                          <p className="text-xs font-medium text-cyan-800 dark:text-cyan-200/90">Edit before approve (local)</p>
                           <div className="grid gap-3 sm:grid-cols-2">
                             <UtcTimePicker
                               id={`${r.id}-ap-s`}
@@ -382,7 +379,7 @@ export function AdminOffsiteRequestsPanel({ embedded = false }: { embedded?: boo
                                   [r.id]: { ...d, start: v },
                                 }))
                               }
-                              variant="dark"
+                              variant="light"
                             />
                             <UtcTimePicker
                               id={`${r.id}-ap-e`}
@@ -394,7 +391,7 @@ export function AdminOffsiteRequestsPanel({ embedded = false }: { embedded?: boo
                                   [r.id]: { ...d, end: v },
                                 }))
                               }
-                              variant="dark"
+                              variant="light"
                             />
                           </div>
                           <div className="flex flex-wrap gap-2">

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import { WorkingHoursMonthPickerCard } from "@/components/client/working-hours-month-picker-card";
 import { useCalendarMode } from "@/components/client/calendar-mode-context";
@@ -43,6 +44,8 @@ type Entry = {
   schedule: string;
   remark: string;
 };
+
+type AdminUser = { id: string; name?: string; email?: string };
 
 type HoursPayload = {
   month: string;
@@ -139,6 +142,70 @@ export function AdminSalarySheet({
   const [overtimeType, setOvertimeType] = React.useState<"same" | "1.5x" | "custom">("same");
   const [customOvertimeRate, setCustomOvertimeRate] = React.useState("");
   const [otSaving, setOtSaving] = React.useState(false);
+
+  const [checkedByName, setCheckedByName] = React.useState("");
+  const [verifiedByName, setVerifiedByName] = React.useState("");
+  const [approvedByName, setApprovedByName] = React.useState("");
+  const [checkedSigB64, setCheckedSigB64] = React.useState<string | null>(null);
+  const [verifiedSigB64, setVerifiedSigB64] = React.useState<string | null>(null);
+  const [approvedSigB64, setApprovedSigB64] = React.useState<string | null>(null);
+  const [admins, setAdmins] = React.useState<AdminUser[]>([]);
+
+  const loadAdmins = React.useCallback(async () => {
+    try {
+      const auth = getFirebaseAuth();
+      const u = auth.currentUser;
+      if (!u) return;
+      const token = await u.getIdToken();
+      const res = await fetch("/api/offsite-work/assignees", { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (res.ok && data.assignees) setAdmins(data.assignees);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void loadAdmins();
+  }, [loadAdmins]);
+
+  const createUploadHandler = React.useCallback((setter: (val: string | null) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setter(null);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const MAX_WIDTH = 400;
+        const MAX_HEIGHT = 200;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > MAX_WIDTH || height > MAX_HEIGHT) {
+          const ratio = Math.min(MAX_WIDTH / width, MAX_HEIGHT / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          setter(canvas.toDataURL("image/png"));
+        } else {
+          setter(dataUrl);
+        }
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  }, []);
 
   /* Keep month in current mode when mode changes */
   const prevModeRef = React.useRef(mode);
@@ -358,17 +425,31 @@ export function AdminSalarySheet({
       // Employee meta
       y += 68;
       doc.setFontSize(8.5); doc.setFont("helvetica", "normal");
-      doc.text(`Employee ID:`, marginX, y); doc.setFont("helvetica", "bold"); doc.text(data.worker.employeeId ?? "—", marginX + 90, y); doc.setFont("helvetica", "normal");
+      
+      // Row 1
+      doc.text(`Employee ID:`, marginX, y); 
+      doc.setFont("helvetica", "bold"); 
+      doc.text(data.worker.employeeId ?? "—", marginX + 90, y); 
+      doc.setFont("helvetica", "normal");
+      doc.text(`Month/Year:`, cx, y); 
+      doc.text(titleMonth, cx + 90, y);
       y += 11;
-      doc.text(`Employee Names:`, marginX, y); doc.setFont("helvetica", "bold"); doc.text(data.worker.name ?? "—", marginX + 90, y); doc.setFont("helvetica", "normal");
+
+      // Row 2
+      doc.text(`Employee Names:`, marginX, y); 
+      doc.setFont("helvetica", "bold"); 
+      doc.text(data.worker.name ?? "—", marginX + 90, y); 
+      doc.setFont("helvetica", "normal");
+      doc.text(`Wages per day for 8 hrs:`, cx, y);
+      doc.text(wagesPerDay != null ? String(wagesPerDay) : "—", cx + 120, y);
       y += 11;
-      doc.text(`Designation:`, marginX, y); doc.setFont("helvetica", "bold"); doc.text(data.worker.designation ?? "—", marginX + 90, y); doc.setFont("helvetica", "normal");
-      y += 11;
-      doc.text(`Month/Year:`, marginX, y); doc.text(titleMonth, marginX + 90, y);
-      y += 11;
-      doc.text(`Wages per day for 8 hrs:`, marginX, y);
-      doc.text(wagesPerDay != null ? String(wagesPerDay) : "—", marginX + 120, y);
-      y += 6;
+
+      // Row 3
+      doc.text(`Designation:`, marginX, y); 
+      doc.setFont("helvetica", "bold"); 
+      doc.text(data.worker.designation ?? "—", marginX + 90, y); 
+      doc.setFont("helvetica", "normal");
+      y += 8;
 
       // Day-by-day attendance table
       autoTable(doc, {
@@ -425,6 +506,29 @@ export function AdminSalarySheet({
         bodyStyles: { lineWidth: 0.3, lineColor: [180, 180, 180] },
         columnStyles: { 2: { halign: "right" }, 1: { halign: "right" } },
       });
+
+      const finalTableY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable?.finalY ?? lastY + 100;
+      const signatureY = finalTableY + 60;
+
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      
+      // Left
+      if (checkedSigB64) doc.addImage(checkedSigB64, "PNG", marginX, signatureY - 45, 60, 40);
+      doc.text("checked by", marginX, signatureY);
+      doc.text(checkedByName || "editable name", marginX, signatureY + 12);
+      
+      // Center
+      if (verifiedSigB64) doc.addImage(verifiedSigB64, "PNG", cx - 40, signatureY - 45, 60, 40);
+      doc.text("verified by", cx - 40, signatureY);
+      doc.text(verifiedByName || "editable name", cx - 40, signatureY + 12);
+      
+      // Right
+      if (approvedSigB64) {
+        doc.addImage(approvedSigB64, "PNG", pageWidth - marginX - 80, signatureY - 45, 60, 40);
+      }
+      doc.text("approved by", pageWidth - marginX - 60, signatureY);
+      doc.text(approvedByName || "editable name", pageWidth - marginX - 60, signatureY + 12);
 
       doc.save(`salary-${data.worker.employeeId ?? data.worker.id ?? "employee"}-${month}.pdf`);
     } catch (e) {
@@ -564,6 +668,89 @@ export function AdminSalarySheet({
                 </div>
               </div>
             </CardContent>
+           </Card>
+
+          {/* ── Sign-Off Details ── */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Sign-Off Details</CardTitle>
+              <CardDescription>
+                Names and signature printed at the bottom of the PDF.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-2 grid gap-4 sm:grid-cols-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                    Checked By Name
+                  </label>
+                  <SearchableSelect
+                    value={checkedByName}
+                    onValueChange={setCheckedByName}
+                    options={admins.map((a) => ({
+                      value: a.name || a.email || "Admin",
+                      label: a.name || a.email || "Admin",
+                      keywords: [a.name || "", a.email || ""],
+                    }))}
+                    emptyLabel="Select admin…"
+                    searchPlaceholder="Search admins…"
+                    triggerClassName="w-full h-9 rounded-lg border border-zinc-200 bg-white px-2.5 text-sm shadow-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 dark:border-white/15 dark:bg-zinc-900 dark:text-white"
+                  />
+                  <input
+                    type="file"
+                    accept="image/png"
+                    onChange={createUploadHandler(setCheckedSigB64)}
+                    className="mt-1 text-[10px] text-zinc-500 file:mr-2 file:cursor-pointer file:rounded-md file:border-0 file:bg-zinc-100 file:px-2 file:py-1 file:text-[10px] file:font-medium file:text-zinc-700 hover:file:bg-zinc-200 dark:file:bg-zinc-800 dark:file:text-zinc-300 dark:hover:file:bg-zinc-700"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                    Verified By Name
+                  </label>
+                  <SearchableSelect
+                    value={verifiedByName}
+                    onValueChange={setVerifiedByName}
+                    options={admins.map((a) => ({
+                      value: a.name || a.email || "Admin",
+                      label: a.name || a.email || "Admin",
+                      keywords: [a.name || "", a.email || ""],
+                    }))}
+                    emptyLabel="Select admin…"
+                    searchPlaceholder="Search admins…"
+                    triggerClassName="w-full h-9 rounded-lg border border-zinc-200 bg-white px-2.5 text-sm shadow-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 dark:border-white/15 dark:bg-zinc-900 dark:text-white"
+                  />
+                  <input
+                    type="file"
+                    accept="image/png"
+                    onChange={createUploadHandler(setVerifiedSigB64)}
+                    className="mt-1 text-[10px] text-zinc-500 file:mr-2 file:cursor-pointer file:rounded-md file:border-0 file:bg-zinc-100 file:px-2 file:py-1 file:text-[10px] file:font-medium file:text-zinc-700 hover:file:bg-zinc-200 dark:file:bg-zinc-800 dark:file:text-zinc-300 dark:hover:file:bg-zinc-700"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                    Approved By Name
+                  </label>
+                  <SearchableSelect
+                    value={approvedByName}
+                    onValueChange={setApprovedByName}
+                    options={admins.map((a) => ({
+                      value: a.name || a.email || "Admin",
+                      label: a.name || a.email || "Admin",
+                      keywords: [a.name || "", a.email || ""],
+                    }))}
+                    emptyLabel="Select admin…"
+                    searchPlaceholder="Search admins…"
+                    triggerClassName="w-full h-9 rounded-lg border border-zinc-200 bg-white px-2.5 text-sm shadow-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 dark:border-white/15 dark:bg-zinc-900 dark:text-white"
+                  />
+                  <input
+                    type="file"
+                    accept="image/png"
+                    onChange={createUploadHandler(setApprovedSigB64)}
+                    className="mt-1 text-[10px] text-zinc-500 file:mr-2 file:cursor-pointer file:rounded-md file:border-0 file:bg-zinc-100 file:px-2 file:py-1 file:text-[10px] file:font-medium file:text-zinc-700 hover:file:bg-zinc-200 dark:file:bg-zinc-800 dark:file:text-zinc-300 dark:hover:file:bg-zinc-700"
+                  />
+                </div>
+              </div>
+            </CardContent>
           </Card>
 
           {/* ── Salary Sheet (full month table) ── */}
@@ -589,17 +776,21 @@ export function AdminSalarySheet({
 
             {/* Employee meta strip */}
             <div className="border-b border-zinc-100 px-5 py-3 dark:border-white/8">
-              <dl className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm sm:grid-cols-4">
+              <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm sm:grid-cols-4">
                 <div><dt className="text-xs text-zinc-400">Employee ID</dt><dd className="font-mono font-medium">{data.worker.employeeId ?? "—"}</dd></div>
-                <div><dt className="text-xs text-zinc-400">Employee Name</dt><dd className="font-medium">{data.worker.name ?? "—"}</dd></div>
-                <div><dt className="text-xs text-zinc-400">Designation</dt><dd>{data.worker.designation ?? "—"}</dd></div>
                 <div><dt className="text-xs text-zinc-400">Month / Year</dt><dd>{titleMonth}</dd></div>
-                <div className="col-span-2 sm:col-span-4">
+                
+                <div className="col-span-2 sm:col-span-2"></div>
+
+                <div className="col-span-2 sm:col-span-1"><dt className="text-xs text-zinc-400">Employee Name</dt><dd className="font-medium">{data.worker.name ?? "—"}</dd></div>
+                <div className="col-span-2 sm:col-span-3">
                   <dt className="text-xs text-zinc-400">Wages per day (for 8 hrs)</dt>
                   <dd className="font-semibold tabular-nums">
                     {wagesPerDay != null ? `Rs. ${wagesPerDay.toFixed(2)}` : "—"}
                   </dd>
                 </div>
+                
+                <div className="col-span-2 sm:col-span-4"><dt className="text-xs text-zinc-400">Designation</dt><dd>{data.worker.designation ?? "—"}</dd></div>
               </dl>
             </div>
 

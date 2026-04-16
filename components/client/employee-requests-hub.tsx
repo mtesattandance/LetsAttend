@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Building2, Clock, LogIn } from "lucide-react";
+import { Building2, Clock, LogIn, FileWarning } from "lucide-react";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +23,12 @@ const cards = [
     title: "Off-site request",
     description: "Request and manage off-site work with admin approval.",
     icon: Building2,
+  },
+  {
+    href: "/dashboard/employee/requests/manual",
+    title: "Late request",
+    description: "Request manual timeline adjustment for forgotten scans or missed working days.",
+    icon: FileWarning,
   },
 ] as const;
 

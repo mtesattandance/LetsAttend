@@ -1,5 +1,6 @@
 import { DateTime } from "luxon";
 import { ADToBS, BSToAD } from "bikram-sambat-js";
+import { formatInstantDateTime12hInZone, formatInstantTime12hInZone } from "@/lib/time/format-wall-time";
 
 
 export type CalendarMode = "ad" | "bs";
@@ -114,4 +115,19 @@ export function bsMonthDays(bsYear: number, bsMonth: number): number {
   const e = DateTime.fromISO(nextFirstAd);
   if (!s.isValid || !e.isValid) return 30; // fallback
   return Math.round(e.diff(s, "days").days);
+}
+
+/** Formats a timestamp as `MMM D, YYYY, H:mm:ss A` or `Month D, YYYY BS, H:mm:ss A` based on mode. */
+export function formatTimestampForMode(
+  ms: number,
+  mode: CalendarMode,
+  zone: string
+): string {
+  if (mode === "ad") {
+    return formatInstantDateTime12hInZone(ms, zone, { withSeconds: true, withTimeZoneName: true });
+  }
+  const adIso = DateTime.fromMillis(ms).setZone(zone).toISODate();
+  const dateStr = adIso ? formatIsoForCalendar(adIso, mode, zone) : "";
+  const timeStr = formatInstantTime12hInZone(ms, zone, { withSeconds: true, withTimeZoneName: true });
+  return `${dateStr}, ${timeStr}`;
 }

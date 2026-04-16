@@ -223,7 +223,7 @@ function NeedCheckInFirstCard({ intent, compact }: { intent: "check-out" | "site
   return (
     <Card className="border-amber-500/25 bg-amber-500/[0.06]">
       <CardContent className={cn("flex flex-col items-center text-center", compact ? "gap-2 py-4" : "gap-4 py-8")}>
-        <p className={cn("font-semibold text-amber-200", compact ? "text-sm" : "text-base")}>{title}</p>
+        <p className={cn("font-semibold text-amber-600 dark:text-amber-200", compact ? "text-sm" : "text-base")}>{title}</p>
         <p className="text-xs text-zinc-400 sm:text-sm">{body}</p>
         <Button asChild size="sm">
           <Link href="/dashboard/employee/check-in">Go to Check in</Link>

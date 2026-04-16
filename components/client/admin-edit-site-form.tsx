@@ -317,14 +317,14 @@ export function AdminEditSiteForm({
             value={workdayStartUtc}
             onChange={setWorkdayStartUtc}
             allowEmpty
-            variant="dark"
+            variant="light"
           />
           <UtcTimePicker
             id={`edit-work-end-${site.id}`}
             label="Work end time (site local time)"
             value={workdayEndUtc}
             onChange={setWorkdayEndUtc}
-            variant="dark"
+            variant="light"
           />
         </div>
         <label className="flex flex-col gap-1 text-sm">

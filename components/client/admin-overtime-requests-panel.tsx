@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { DEFAULT_ATTENDANCE_TIME_ZONE } from "@/lib/date/time-zone";
 import { formatInstantDateTime12hInZone } from "@/lib/time/format-wall-time";
 import { useCalendarMode } from "@/components/client/calendar-mode-context";
-import { formatIsoForCalendar } from "@/lib/date/bs-calendar";
+import { formatIsoForCalendar, formatTimestampForMode, CalendarMode } from "@/lib/date/bs-calendar";
 import { cn } from "@/lib/utils";
 
 type OvertimeStamp = {
@@ -46,13 +46,10 @@ type Row = {
 
 type SiteOpt = { id: string; name?: string };
 
-function fmt(v: unknown) {
+function fmt(v: unknown, mode: CalendarMode) {
   const s = getFirestoreSeconds(v);
   if (s == null) return "—";
-  return formatInstantDateTime12hInZone(s * 1000, DEFAULT_ATTENDANCE_TIME_ZONE, {
-    withSeconds: true,
-    withTimeZoneName: true,
-  });
+  return formatTimestampForMode(s * 1000, mode, DEFAULT_ATTENDANCE_TIME_ZONE);
 }
 
 function fmtGps(g: OvertimeStamp["gps"]) {
@@ -421,12 +418,12 @@ export function AdminOvertimeRequestsPanel({ embedded = false }: { embedded?: bo
                         </div>
                         <div>
                           <span className="text-zinc-500">Submitted: </span>
-                          {fmt(r.createdAt)}
+                          {fmt(r.createdAt, mode)}
                         </div>
                         {r.reviewedAt ? (
                           <div>
                             <span className="text-zinc-500">Reviewed: </span>
-                            {fmt(r.reviewedAt)}{" "}
+                            {fmt(r.reviewedAt, mode)}{" "}
                             {r.reviewedByEmail ? `· ${r.reviewedByEmail}` : ""}
                           </div>
                         ) : null}
@@ -441,7 +438,7 @@ export function AdminOvertimeRequestsPanel({ embedded = false }: { embedded?: bo
                           {hasIn ? (
                             <div className="text-zinc-600 dark:text-zinc-400">
                               <span className="text-zinc-500">Check-in: </span>
-                              {fmt(inTs)}{" "}
+                              {fmt(inTs, mode)}{" "}
                               <span className="text-zinc-600">
                                 · GPS {fmtGps(r.overtimeCheckIn?.gps)}
                               </span>
@@ -466,7 +463,7 @@ export function AdminOvertimeRequestsPanel({ embedded = false }: { embedded?: bo
                           {hasOut ? (
                             <div className="text-zinc-600 dark:text-zinc-400">
                               <span className="text-zinc-500">Check-out: </span>
-                              {fmt(outTs)}{" "}
+                              {fmt(outTs, mode)}{" "}
                               <span className="text-zinc-600">
                                 · GPS {fmtGps(r.overtimeCheckOut?.gps)}
                               </span>

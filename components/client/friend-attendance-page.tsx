@@ -171,7 +171,7 @@ export function FriendAttendancePage() {
             </p>
           ) : null}
           {selectedHasOpenSession ? (
-            <p className="rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-sm text-amber-200">
+            <p className="rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50 dark:bg-amber-500/5 px-4 py-3 text-sm text-amber-700 dark:text-amber-200">
               {selected.employeeId} is already checked in. Continue with <strong>Switch</strong> or{" "}
               <strong>Check out</strong> below.
             </p>

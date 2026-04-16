@@ -324,11 +324,11 @@ export function EmployeeOvertimeRequestPanel() {
                                 onComplete={() => void loadMine()}
                               />
                             ) : !hasSite ? (
-                              <p className="text-xs text-amber-200/90">
+                              <p className="text-xs text-amber-600 dark:text-amber-200/90">
                                 This request has no work site. Create a new overtime request with site selected.
                               </p>
                             ) : (
-                              <p className="text-xs text-amber-200/80">
+                              <p className="text-xs text-amber-600 dark:text-amber-200/80">
                                 Open this page on work date{" "}
                                 <span className="font-mono">{displayDateStr}</span> to check in and check
                                 out (same calendar day in your time zone).
@@ -364,11 +364,11 @@ export function EmployeeOvertimeRequestPanel() {
                                 onComplete={() => void loadMine()}
                               />
                             ) : !hasSite ? (
-                              <p className="text-xs text-amber-200/90">
+                              <p className="text-xs text-amber-600 dark:text-amber-200/90">
                                 Check-out needs a work site on this request. Ask an admin to set a site.
                               </p>
                             ) : (
-                              <p className="text-xs text-amber-200/80">
+                              <p className="text-xs text-amber-600 dark:text-amber-200/80">
                                 Come back on work date <span className="font-mono">{displayDateStr}</span> to
                                 check out (same calendar day as this overtime).
                               </p>

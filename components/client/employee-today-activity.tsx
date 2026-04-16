@@ -232,7 +232,7 @@ export function EmployeeTodayActivity() {
                     </p>
                     {log.previousSiteCheckOut ? (
                       <div className="mt-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-2 text-xs text-zinc-400">
-                        <p className="font-medium text-amber-200/90">
+                        <p className="font-medium text-amber-600 dark:text-amber-200/90">
                           Check-out from{" "}
                           <span className="text-amber-100">
                             {log.previousSiteCheckOut.siteName ?? log.previousSiteCheckOut.siteId ?? "?"}
@@ -274,7 +274,7 @@ export function EmployeeTodayActivity() {
                   <p>
                     Time: <span className="text-zinc-100">{fmtTime(data.checkOut.atMs, displayTz)}</span>
                     {data.checkOut.auto ? (
-                      <span className="ml-2 rounded-md bg-amber-500/20 px-2 py-0.5 text-xs text-amber-200">
+                      <span className="ml-2 rounded-md bg-amber-100 dark:bg-amber-500/20 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-200">
                         Automatic (end of day)
                       </span>
                     ) : null}

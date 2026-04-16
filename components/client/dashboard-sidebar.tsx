@@ -27,6 +27,7 @@ import {
   FileDown,
   UserCircle2,
   DollarSign,
+  FileWarning,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -66,6 +67,7 @@ export function DashboardSidebar({ mobileOpen, onCloseMobile }: Props) {
     { href: "/dashboard/employee/check-out", label: "Check out", icon: CircleStop },
     { href: "/dashboard/employee/switch", label: "Switch", icon: ArrowLeftRight },
     { href: "/dashboard/employee/friend", label: "Friend check-in", icon: UserPlus },
+    { href: "/dashboard/employee/requests/manual", label: "Late request", icon: FileWarning },
     { href: "/dashboard/employee/assigned", label: "Assigned", icon: ClipboardList },
     { href: "/dashboard/employee/calendar", label: "Calendar", icon: Calendar },
     {
