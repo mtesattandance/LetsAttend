@@ -9,119 +9,77 @@ import { createNotification } from "@/lib/notifications/create-notification";
 
 export const runtime = "nodejs";
 
-const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+// POST handled natively in Checkin/Checkout API
 
-const postSchema = z.object({
-  siteId: z.string().min(1),
-  date: z.string().regex(dateRe, "Use calendar date YYYY-MM-DD"),
-  reason: z.string().min(3).max(2000),
-});
-
-/** Employee creates an overtime request. */
-export async function POST(req: Request) {
-  const auth = await requireBearerUser(req);
-  if (!auth.ok) return auth.response;
-  const { uid, email } = auth.decoded;
-
-  let json: unknown;
-  try {
-    json = await req.json();
-  } catch {
-    return jsonError("Invalid JSON", 400);
-  }
-  const parsed = postSchema.safeParse(json);
-  if (!parsed.success) {
-    return jsonError(parsed.error.issues[0]?.message ?? "Invalid body", 400);
-  }
-
-  const db = adminDb();
-  const userSnap = await db.collection("users").doc(uid).get();
-  const role = userSnap.get("role") as string | undefined;
-  if (role !== "employee" && role !== "admin" && role !== "super_admin") {
-    return jsonError("Only workspace members can request overtime", 403);
-  }
-
-  const name = userSnap.get("name");
-  const ref = db.collection("overtimeRequests").doc();
-  const now = FieldValue.serverTimestamp();
-  await ref.set({
-    workerId: uid,
-    workerEmail: email ?? null,
-    workerName: typeof name === "string" ? name : null,
-    siteId: parsed.data.siteId.trim(),
-    date: parsed.data.date,
-    reason: parsed.data.reason.trim(),
-    status: "pending",
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  // Notify all admins & super_admins about the new overtime request
-  try {
-    const adminSnap = await db.collection("users")
-      .where("role", "in", ["admin", "super_admin"]).get();
-    const workerLabel = (typeof name === "string" && name.trim()) ? name.trim() : (email ?? uid);
-    await Promise.all(adminSnap.docs.map((ad) =>
-      createNotification(db, {
-        userId: ad.id,
-        title: "New overtime request",
-        body: `${workerLabel} has requested overtime for ${parsed.data.date}. Reason: ${parsed.data.reason.slice(0, 120)}`,
-        kind: "overtime_request",
-        link: "/dashboard/admin/requests?tab=overtime",
-      })
-    ));
-  } catch { /* non-critical */ }
-
-  return NextResponse.json({ ok: true, id: ref.id });
-}
-
-/**
- * Admin: all requests (newest first). Optional ?status=pending|approved|rejected
- * Non-admin: only their own requests.
- */
 export async function GET(req: Request) {
   const auth = await requireBearerUser(req);
   if (!auth.ok) return auth.response;
   const { uid, email } = auth.decoded;
 
   const { searchParams } = new URL(req.url);
-  const statusFilter = searchParams.get("status");
+  const statusFilter = searchParams.get("status") || "pending";
   const siteIdFilter = searchParams.get("siteId");
+  const typeFilter = searchParams.get("type"); // 'overtime' or 'late'
 
   const db = adminDb();
   const isAdmin = (await assertAdmin(uid, email)) === null;
 
-  if (isAdmin) {
-    const snap = await db
-      .collection("overtimeRequests")
-      .orderBy("createdAt", "desc")
-      .limit(300)
-      .get();
+  let query = db.collection("attendance") as any;
 
-    let items = snap.docs.map((d) =>
-      serializeFirestoreForJson({ id: d.id, ...d.data() })
-    ) as Record<string, unknown>[];
-    if (statusFilter === "pending" || statusFilter === "approved" || statusFilter === "rejected") {
-      items = items.filter((row) => (row as { status?: string }).status === statusFilter);
-    }
-    if (siteIdFilter?.trim()) {
-      const sid = siteIdFilter.trim();
-      items = items.filter((row) => (row as { siteId?: string | null }).siteId === sid);
-    }
-    return NextResponse.json({ items });
+  if (!isAdmin) {
+    query = query.where("workerId", "==", uid);
   }
 
-  const snap = await db.collection("overtimeRequests").where("workerId", "==", uid).limit(100).get();
-  const items = snap.docs
-    .map((d) => serializeFirestoreForJson({ id: d.id, ...d.data() }) as Record<string, unknown>)
-    .sort((a, b) => {
-      const ta = (a.createdAt as { seconds?: number } | undefined)?.seconds ?? 0;
-      const tb = (b.createdAt as { seconds?: number } | undefined)?.seconds ?? 0;
+  if (statusFilter === "pending") {
+    query = query.where("status", "==", "pending_admin_approval");
+  } else if (statusFilter === "rejected") {
+    query = query.where("status", "==", "rejected");
+  } else if (statusFilter === "approved") {
+    query = query.where("status", "==", "present");
+  }
+
+  try {
+    // Cannot use orderBy combined with where without a composite index, so fetch and sort in memory API-side.
+    const snap = await query.limit(200).get();
+
+    let items = snap.docs.map((d: any) => {
+      const data = d.data();
+      return serializeFirestoreForJson({
+        id: d.id,
+        workerId: data.workerId,
+        date: data.date,
+        siteId: data.siteId,
+        status: data.status === "pending_admin_approval" ? "pending" : (data.status === "present" ? "approved" : "rejected"),
+        createdAt: data.updatedAt,
+        overtimeCheckIn: data.checkIn,
+        overtimeCheckOut: data.checkOut,
+        reason: `[Checkin: ${data.checkInTag || "regular"}] [Checkout: ${data.checkOutTag || "regular"}]`,
+      });
+    });
+
+    items.sort((a: any, b: any) => {
+      const ta = a.createdAt?.seconds ?? 0;
+      const tb = b.createdAt?.seconds ?? 0;
       return tb - ta;
     });
-  let filtered = items;
-  if (statusFilter === "pending" || statusFilter === "approved" || statusFilter === "rejected") {
-    filtered = items.filter((row) => (row as { status?: string }).status === statusFilter);
+
+    if (statusFilter === "approved") {
+      items = items.filter((i: any) => i.reason.includes("overtime") || i.reason.includes("late"));
+    }
+
+    if (typeFilter === "overtime") {
+      items = items.filter((i: any) => i.reason.includes("overtime"));
+    } else if (typeFilter === "late") {
+      items = items.filter((i: any) => i.reason.includes("late"));
+    }
+    
+    if (siteIdFilter?.trim()) {
+      const sid = siteIdFilter.trim();
+      items = items.filter((row: any) => row.siteId === sid);
+    }
+    
+    return NextResponse.json({ items });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message || "Failed to fetch attendance" }, { status: 500 });
   }
-  return NextResponse.json({ items: filtered });
 }

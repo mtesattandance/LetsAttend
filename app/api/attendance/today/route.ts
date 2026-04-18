@@ -100,8 +100,18 @@ export async function GET(req: Request) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
     return jsonError("Invalid day", 400);
   }
-  const attRef = db.collection("attendance").doc(`${workerId}_${day}`);
-  const attSnap = await attRef.get();
+  const baseRef = db.collection("attendance").doc(`${workerId}_${day}`);
+  let attSnap = await baseRef.get();
+
+  if (attSnap.exists) {
+    const cd = attSnap.data()!;
+    if (cd.checkIn && cd.checkOut) {
+      const otSnap = await db.collection("attendance").doc(`${workerId}_${day}_overtime`).get();
+      if (otSnap.exists) {
+        attSnap = otSnap;
+      }
+    }
+  }
   if (!attSnap.exists) {
     const noRecordData = {
       day,
@@ -247,6 +257,7 @@ export async function GET(req: Request) {
           atMs: tsMs(checkIn.time),
           photoUrl: typeof checkIn.photoUrl === "string" ? checkIn.photoUrl : null,
           gps: checkIn.gps ?? null,
+          tag: typeof data.checkInTag === "string" ? data.checkInTag : null,
         }
       : null,
     checkOut: checkOut
@@ -255,8 +266,10 @@ export async function GET(req: Request) {
           photoUrl: typeof checkOut.photoUrl === "string" ? checkOut.photoUrl : null,
           gps: checkOut.gps ?? null,
           auto: checkOut.auto === true,
+          tag: typeof data.checkOutTag === "string" ? data.checkOutTag : null,
         }
       : null,
+    status: typeof data.status === "string" ? data.status : null,
     siteSwitchLogs,
   };
   todayCache.set(cacheKey, { data: todayData, expiresAt: Date.now() + CACHE_TTL_MS });

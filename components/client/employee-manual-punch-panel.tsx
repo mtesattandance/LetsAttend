@@ -125,7 +125,7 @@ export function EmployeeManualPunchPanel() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to submit request");
 
-      toast.success("Late request submitted!");
+      toast.success("Missed attendance request submitted!");
       setDate("");
       setReason("");
       setSegments([{ id: Math.random().toString(), siteId: "", inHm: "09:00", outHm: "18:00" }]);
@@ -249,15 +249,12 @@ export function EmployeeManualPunchPanel() {
               </Card>
             ))}
           </div>
-          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-            If you switched sites, add multiple blocks in chronological order. Your final block's
-            End Time counts as your Check-Out.
-          </p>
+
         </div>
 
         <Button type="submit" disabled={submitting} className="w-full sm:w-auto">
           {submitting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Send className="mr-2 size-4" />}
-          Submit Late Request
+          Submit Missed Attendance Request
         </Button>
       </form>
     </div>

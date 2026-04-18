@@ -335,7 +335,6 @@ export default function AdminReportsPage() {
               "Out Time",
               "Duty Hours",
               "Work Place",
-              "Schedule",
               "Remark",
             ],
           ],
@@ -347,7 +346,6 @@ export default function AdminReportsPage() {
             r.outTime,
             r.dutyHours.toFixed(2),
             r.workPlace,
-            r.schedule || "—",
             r.remark === "No work entry" ? "No entry" : (r.remark || "-"),
           ]),
           foot: [

@@ -113,9 +113,7 @@ function WorkDoneBanner({ durationMs, compact }: { durationMs: number | null; co
           <p className={cn("font-semibold text-emerald-300", compact ? "text-lg" : "text-xl")}>
             Work day complete!
           </p>
-          <p className="mt-0.5 text-sm text-zinc-400">
-            You have successfully checked out for today.
-          </p>
+
         </div>
         {durationMs != null && durationMs > 0 ? (
           <div
@@ -133,7 +131,7 @@ function WorkDoneBanner({ durationMs, compact }: { durationMs: number | null; co
         ) : null}
         <div className={cn("flex flex-wrap justify-center gap-2", compact ? "mt-1" : "mt-2")}>
           <Button asChild variant="outline" size="sm" className="border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10">
-            <Link href="/dashboard/employee/requests/overtime">Request Overtime</Link>
+            <Link href="/dashboard/employee/check-in">Start Overtime</Link>
           </Button>
           <Button asChild variant="ghost" size="sm" className="text-zinc-400 hover:text-zinc-200">
             <Link href="/dashboard/employee/today">View Today&apos;s Record</Link>
@@ -161,7 +159,7 @@ function PastWorkEndBanner() {
           </p>
         </div>
         <Button asChild size="sm" className="mt-1 bg-amber-500 text-black hover:bg-amber-400">
-          <Link href="/dashboard/employee/requests/overtime">Request Overtime</Link>
+          <Link href="/dashboard/employee/check-in">Check In (Overtime)</Link>
         </Button>
       </div>
     </div>
@@ -190,10 +188,7 @@ function AlreadyCheckedInCard({ onDismiss, compact }: { onDismiss: () => void; c
           <p className={cn("font-semibold text-cyan-300", compact ? "text-sm" : "text-base")}>
             Already checked in
           </p>
-          <p className="mt-1 text-xs leading-snug text-zinc-400 sm:text-sm">
-            You are already checked in for today. Use <strong className="text-zinc-300">Switch</strong> or{" "}
-            <strong className="text-zinc-300">Check out</strong> in the sidebar when you are done.
-          </p>
+
         </div>
         <div className="flex flex-wrap justify-center gap-2">
           <Button asChild size="sm" variant="outline" className="border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10">
@@ -224,7 +219,6 @@ function NeedCheckInFirstCard({ intent, compact }: { intent: "check-out" | "site
     <Card className="border-amber-500/25 bg-amber-500/[0.06]">
       <CardContent className={cn("flex flex-col items-center text-center", compact ? "gap-2 py-4" : "gap-4 py-8")}>
         <p className={cn("font-semibold text-amber-600 dark:text-amber-200", compact ? "text-sm" : "text-base")}>{title}</p>
-        <p className="text-xs text-zinc-400 sm:text-sm">{body}</p>
         <Button asChild size="sm">
           <Link href="/dashboard/employee/check-in">Go to Check in</Link>
         </Button>
@@ -401,29 +395,29 @@ function EmployeeWorkPanelsInner({ section }: { section: EmployeeWorkSection }) 
   const compact = section !== "full";
   const stackGap = compact ? "gap-3" : "gap-4 md:gap-6";
 
-  // --- Work done state ---
   if (isWorkDone) {
-    return (
-      <div className={cn("mx-auto flex max-w-2xl flex-col", stackGap)}>
-        <WorkDoneBanner durationMs={sessionDurationMs} compact={compact} />
-        {section === "full" ? (
-          <div className="pointer-events-none select-none opacity-30 blur-[2px]">
-            <Card>
-              <CardContent className="py-6 text-center text-sm text-zinc-500">
-                Check in · Site switch · Check out
-              </CardContent>
-            </Card>
-          </div>
-        ) : (
-          <p className="text-center text-xs text-zinc-500 dark:text-zinc-400">
-            <Link href="/dashboard/employee" className="text-cyan-600 underline underline-offset-2 dark:text-cyan-400">
-              All steps on one page
-            </Link>{" "}
-            — check in, switch site, and check out together.
-          </p>
-        )}
-      </div>
-    );
+    if (section === "full") {
+      return (
+        <div className={cn("mx-auto flex max-w-2xl flex-col", stackGap)}>
+          <WorkDoneBanner durationMs={sessionDurationMs} compact={compact} />
+          <EmployeeCheckInPanel />
+        </div>
+      );
+    } else if (section === "check-out" || section === "switch") {
+      return (
+        <div className={cn("mx-auto flex max-w-2xl flex-col", stackGap)}>
+          <WorkDoneBanner durationMs={sessionDurationMs} compact={compact} />
+        </div>
+      );
+    } else {
+      // For check-in section, we just render the CheckIn panel directly so they can do overtime
+      return (
+        <div className={cn("mx-auto flex max-w-2xl flex-col", stackGap)}>
+          <WorkDoneBanner durationMs={sessionDurationMs} compact={compact} />
+          <EmployeeCheckInPanel />
+        </div>
+      );
+    }
   }
 
   // --- Past work-end, never checked in ---
@@ -464,11 +458,7 @@ function EmployeeWorkPanelsInner({ section }: { section: EmployeeWorkSection }) 
           compact={compact}
           intent={focusAction === "site-switch" || section === "switch" ? "site-switch" : "check-out"}
         />
-        <p className="text-center text-xs text-zinc-500">
-          <Link href="/dashboard/employee" className="underline underline-offset-2 hover:text-zinc-300">
-            ← Full Work (all steps)
-          </Link>
-        </p>
+
       </div>
     );
   }
@@ -478,13 +468,7 @@ function EmployeeWorkPanelsInner({ section }: { section: EmployeeWorkSection }) 
     return (
       <div className={cn("mx-auto flex max-w-2xl flex-col", stackGap)}>
         <EmployeeCheckOutPanel />
-        {section === "full" ? (
-          <p className="text-center text-xs text-zinc-500">
-            <Link href="/dashboard/employee" className="underline underline-offset-2 hover:text-zinc-300">
-              ← Full Work (all steps)
-            </Link>
-          </p>
-        ) : null}
+
       </div>
     );
   }
@@ -494,13 +478,7 @@ function EmployeeWorkPanelsInner({ section }: { section: EmployeeWorkSection }) 
     return (
       <div className={cn("mx-auto flex max-w-2xl flex-col", stackGap)}>
         <EmployeeSiteSwitchPanel />
-        {section === "full" ? (
-          <p className="text-center text-xs text-zinc-500">
-            <Link href="/dashboard/employee" className="underline underline-offset-2 hover:text-zinc-300">
-              ← Full Work (all steps)
-            </Link>
-          </p>
-        ) : null}
+
       </div>
     );
   }
@@ -533,11 +511,7 @@ function EmployeeWorkPanelsInner({ section }: { section: EmployeeWorkSection }) 
     return (
       <div className={cn("mx-auto flex max-w-2xl flex-col", stackGap)}>
         <EmployeeCheckInPanel />
-        <p className="text-center text-xs text-zinc-500 dark:text-zinc-400">
-          <Link href="/dashboard/employee" className="underline underline-offset-2 hover:text-zinc-300">
-            Full Work — all steps on one page
-          </Link>
-        </p>
+
       </div>
     );
   }

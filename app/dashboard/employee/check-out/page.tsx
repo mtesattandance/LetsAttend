@@ -4,7 +4,7 @@ export default function EmployeeCheckOutPage() {
   return (
     <EmployeeWorkRouteShell
       title="Check out"
-      description="End your work day when you are finished. You must be checked in first."
+      description=""
       section="check-out"
     />
   );

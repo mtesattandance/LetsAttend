@@ -21,6 +21,7 @@ const bodySchema = z.object({
   photoUrl: z.string().url(),
   /** Record check-in for another worker (friend / shared phone). Server validates permission. */
   forWorkerId: z.string().min(1).optional(),
+  tag: z.enum(["regular", "overtime", "late_checkin"]).optional(),
 });
 
 export async function POST(req: Request) {
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return jsonError(parsed.error.issues[0]?.message ?? "Invalid body", 400);
   }
-  const { siteId, latitude, longitude, accuracyM, photoUrl, forWorkerId } = parsed.data;
+  const { siteId, latitude, longitude, accuracyM, photoUrl, forWorkerId, tag } = parsed.data;
 
   const db = adminDb();
   const callerRef = db.collection("users").doc(decoded.uid);
@@ -124,20 +125,22 @@ export async function POST(req: Request) {
     nowMs: Date.now(),
   });
   if (windowState === "early" || windowState === "late" || windowState === "missed_check_in") {
-    const msg =
-      windowState === "early"
-        ? "Check-in opens 15 minutes before shift start through 15 minutes after start, or submit an overtime request to arrive earlier."
-        : windowState === "missed_check_in"
-          ? "You missed the regular check-in window (15 minutes before through 15 minutes after shift start). Submit an overtime request or contact an admin."
-          : "Regular check-in is not allowed after working hours — submit an overtime request.";
-    return jsonError(msg, 403);
+    if (tag !== "overtime" && tag !== "late_checkin") {
+      const msg =
+        windowState === "early"
+          ? "Check-in opens 15 minutes before shift start through 15 minutes after start, or submit an overtime request to arrive earlier."
+          : windowState === "missed_check_in"
+            ? "You missed the regular check-in window (15 minutes before through 15 minutes after shift start). Submit an overtime request or contact an admin."
+            : "Regular check-in is not allowed after working hours — submit an overtime request.";
+      return jsonError(msg, 403);
+    }
   }
 
   const tz = timeZoneFromUserSnapshot(workerSnap);
   const day = calendarDateKeyInTimeZone(new Date(), tz);
-  const attRef = db.collection("attendance").doc(`${workerUid}_${day}`);
-  const attSnap = await attRef.get();
-  const existing = attSnap.data() as
+  let attRef = db.collection("attendance").doc(`${workerUid}_${day}`);
+  let attSnap = await attRef.get();
+  let existing = attSnap.data() as
     | {
         checkIn?: unknown;
         checkOut?: unknown;
@@ -145,11 +148,21 @@ export async function POST(req: Request) {
       }
     | undefined;
 
+  if (existing?.checkIn && existing?.checkOut) {
+    if (tag === "overtime") {
+      attRef = db.collection("attendance").doc(`${workerUid}_${day}_overtime`);
+      attSnap = await attRef.get();
+      existing = attSnap.data() as any;
+      if (existing?.checkIn && existing?.checkOut) {
+        return jsonError("Overtime attendance already completed for today", 409);
+      }
+    } else {
+      return jsonError("Attendance already completed for today", 409);
+    }
+  }
+
   if (existing?.checkIn && !existing?.checkOut) {
     return jsonError("Already checked in. Check out or use site switch.", 409);
-  }
-  if (existing?.checkIn && existing?.checkOut) {
-    return jsonError("Attendance already completed for today", 409);
   }
 
   const now = FieldValue.serverTimestamp();
@@ -172,7 +185,8 @@ export async function POST(req: Request) {
       siteId,
       date: day,
       checkIn: checkInPayload,
-      status: "present",
+      status: tag === "overtime" || tag === "late_checkin" ? "pending_admin_approval" : "present",
+      checkInTag: tag || "regular",
       siteSwitchLogs: Array.isArray(existing?.siteSwitchLogs)
         ? existing!.siteSwitchLogs
         : [],

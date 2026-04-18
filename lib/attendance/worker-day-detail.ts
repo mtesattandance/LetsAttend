@@ -29,6 +29,8 @@ export type TimelineEvent =
       siteName: string;
       photoUrl: string | null;
       gps: unknown;
+      isOvertime?: boolean;
+      status?: string;
     }
   | {
       kind: "site_switch";
@@ -55,6 +57,8 @@ export type TimelineEvent =
       photoUrl: string | null;
       gps: unknown;
       auto: boolean;
+      isOvertime?: boolean;
+      status?: string;
     }
   | {
       kind: "offline_window";
@@ -189,13 +193,18 @@ async function fetchOvertimeForWorkerDay(
   day: string
 ): Promise<OvertimeDayDetailRow[]> {
   const snap = await db
-    .collection("overtimeRequests")
+    .collection("attendance")
     .where("workerId", "==", workerId)
     .where("date", "==", day)
     .get();
 
+  const overtimeDocs = snap.docs.filter((d) => {
+    const data = d.data();
+    return data.checkInTag === "overtime" || data.checkOutTag === "overtime";
+  });
+
   const siteIds = new Set<string>();
-  for (const doc of snap.docs) {
+  for (const doc of overtimeDocs) {
     const sid = doc.get("siteId");
     if (typeof sid === "string" && sid) siteIds.add(sid);
   }
@@ -207,11 +216,11 @@ async function fetchOvertimeForWorkerDay(
       s.exists && typeof s.data()?.name === "string" ? (s.data()!.name as string) : sid;
   }
 
-  const withOrder = snap.docs.map((d) => {
+  const withOrder = overtimeDocs.map((d) => {
     const data = d.data();
     const siteId = typeof data.siteId === "string" ? data.siteId : null;
-    const ci = data.overtimeCheckIn as Record<string, unknown> | undefined;
-    const co = data.overtimeCheckOut as Record<string, unknown> | undefined;
+    const ci = data.checkIn as Record<string, unknown> | undefined;
+    const co = data.checkOut as Record<string, unknown> | undefined;
 
     const pack = (
       block: Record<string, unknown> | undefined
@@ -224,16 +233,20 @@ async function fetchOvertimeForWorkerDay(
           }
         : null;
 
+    let status = typeof data.status === "string" ? data.status : "unknown";
+    if (status === "pending_admin_approval") status = "pending";
+    if (status === "present") status = "approved";
+
     const row: OvertimeDayDetailRow = {
       id: d.id,
-      status: typeof data.status === "string" ? data.status : "unknown",
-      reason: typeof data.reason === "string" ? data.reason : "",
+      status,
+      reason: `[Checkin: ${data.checkInTag || "regular"}] [Checkout: ${data.checkOutTag || "regular"}]`,
       siteId,
       siteName: siteId ? siteNames[siteId] ?? siteId : null,
       overtimeCheckIn: pack(ci),
       overtimeCheckOut: pack(co),
     };
-    return { row, sortKey: timeToMs(d.get("createdAt")) ?? 0 };
+    return { row, sortKey: timeToMs(data.updatedAt) ?? 0 };
   });
 
   withOrder.sort((a, b) => a.sortKey - b.sortKey);
@@ -815,17 +828,31 @@ export async function buildWorkerDayDetail(
   }
   // Overtime sessions — show if they have an actual check-in timestamp.
   for (const ot of overtime) {
-    const ciMs = ot.overtimeCheckIn?.atMs ?? null;
-    const coMs = ot.overtimeCheckOut?.atMs ?? null;
-    if (ciMs != null) {
+    const ciP = ot.overtimeCheckIn;
+    const coP = ot.overtimeCheckOut;
+    if (ciP?.atMs != null) {
       timeline.push({
-        kind: "overtime",
-        atMs: ciMs,
-        endMs: coMs,
+        kind: "check_in",
+        atMs: ciP.atMs,
+        siteId: ot.siteId ?? "",
+        siteName: ot.siteName ?? "?",
+        photoUrl: typeof ciP.photoUrl === "string" ? ciP.photoUrl : null,
+        gps: ciP.gps ?? null,
+        isOvertime: true,
         status: ot.status,
-        reason: ot.reason,
-        siteId: ot.siteId,
-        siteName: ot.siteName,
+      });
+    }
+    if (coP?.atMs != null) {
+      timeline.push({
+        kind: "check_out",
+        atMs: coP.atMs,
+        siteId: ot.siteId ?? "",
+        siteName: ot.siteName ?? "?",
+        photoUrl: typeof coP.photoUrl === "string" ? coP.photoUrl : null,
+        gps: coP.gps ?? null,
+        auto: false,
+        isOvertime: true,
+        status: ot.status,
       });
     }
   }

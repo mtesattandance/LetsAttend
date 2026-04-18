@@ -33,7 +33,8 @@ export function UserAccountDropdown({ user }: { user: DashboardUser }) {
           >
             {nameToInitials(user.name)}
           </span>
-          <span className="min-w-0 flex-1 truncate text-left text-sm font-medium">{user.name}</span>
+          <span className="min-w-0 flex-1 truncate text-left text-sm font-medium hidden md:inline-block">{user.name}</span>
+          <span className="min-w-0 flex-1 truncate text-left text-sm font-medium md:hidden">{user.name.split(" ")[0]?.slice(0, 6)}</span>
           <ChevronDown className="size-4 shrink-0 opacity-60" aria-hidden />
         </button>
       </DropdownMenu.Trigger>

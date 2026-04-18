@@ -158,10 +158,7 @@ export function AdminAssignSitesForm() {
     <Card>
       <CardHeader>
         <CardTitle className="text-lg">Assign work sites</CardTitle>
-        <CardDescription>
-          Choose an employee, tick the sites they may use for check-in and site switch. Until at least
-          one site is assigned, they cannot check in. They receive an in-app notification when you save.
-        </CardDescription>
+
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {loading ? (

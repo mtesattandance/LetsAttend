@@ -31,6 +31,7 @@ export function AuthHeaderProfile() {
         {nameToInitials(name)}
       </span>
       <span className="hidden max-w-[100px] truncate sm:inline">{name}</span>
+      <span className="sm:hidden ml-1 max-w-[60px] truncate text-xs">{name.split(" ")[0]?.slice(0, 6)}</span>
     </Link>
   );
 }

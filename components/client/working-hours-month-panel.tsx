@@ -298,7 +298,7 @@ export function WorkingHoursMonthPanel({
           ? monthLabelForModeYm(pMonthParts[0]!, pMonthParts[1]!, mode)
           : p.month;
       const startY = drawHeader(monthLabel);
-      const tableRows: Array<[string, string, string, string, string, string, string, string, string]> =
+      const tableRows: Array<[string, string, string, string, string, string, string, string]> =
         p.entries.map((r) => [
           mode === "bs" ? formatIsoForCalendar(r.day, "bs", p.zone) : r.day,
           DateTime.fromISO(r.day, { zone: p.zone }).toFormat("ccc"),
@@ -307,7 +307,6 @@ export function WorkingHoursMonthPanel({
           r.outTime,
           r.dutyHours.toFixed(2),
           r.workPlace,
-          r.schedule || "—",
           r.remark === "No work entry" ? "No entry" : (r.remark || "-"),
         ]);
       autoTable(doc, {
@@ -321,7 +320,6 @@ export function WorkingHoursMonthPanel({
             "Out Time",
             "Duty Hours",
             "Work Place",
-            "Schedule",
             "Remark",
           ],
         ],
@@ -624,58 +622,6 @@ export function WorkingHoursMonthPanel({
             </div>
           ) : null}
           <div className={cn(loading && "select-none blur-[1px]")}>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Total (credited)</CardTitle>
-                <CardDescription>{titleMonth}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-semibold tabular-nums">
-                  {fmtHr(data.totalHours)} h
-                </p>
-                <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                  On-site sessions + approved overtime + approved off-site (same rules as day
-                  detail).
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="border-violet-200/80 dark:border-violet-500/25">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Off-site hours</CardTitle>
-                <CardDescription>Approved off-site work this month</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-semibold tabular-nums text-violet-700 dark:text-violet-300">
-                  {fmtHr(data.approvedOffsiteHours)} h
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Monthly cap &amp; overtime</CardTitle>
-                <CardDescription>{MONTHLY_REGULAR_CAP_HOURS} h regular target</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm">
-                <p>
-                  <span className="text-zinc-500">Regular (up to cap): </span>
-                  <span className="font-medium tabular-nums">
-                    {fmtHr(data.regularHoursUpToCap)} h
-                  </span>
-                </p>
-                <p>
-                  <span className="text-zinc-500">Overtime (above {MONTHLY_REGULAR_CAP_HOURS} h): </span>
-                  <span className="font-medium tabular-nums text-amber-700 dark:text-amber-300">
-                    {fmtHr(data.hoursOverCapAsOvertime)} h
-                  </span>
-                </p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Example: {MONTHLY_REGULAR_CAP_HOURS + 4} h total → {MONTHLY_REGULAR_CAP_HOURS} h regular +
-                  4 h overtime.
-                </p>
-              </CardContent>
-            </Card>
-          </div>
 
           {(typeof wageRate === "number" || typeof overtimeRate === "number") && data && (() => {
             const rRate = wageRate ?? 0;
@@ -751,7 +697,6 @@ export function WorkingHoursMonthPanel({
                     <th className="py-2 pr-3">Out Time</th>
                     <th className="py-2 pr-3">Duty Hours</th>
                     <th className="py-2 pr-3">Work Place</th>
-                    <th className="py-2 pr-3">Schedule</th>
                     <th className="py-2">Remark</th>
                   </tr>
                 </thead>
@@ -879,7 +824,6 @@ export function WorkingHoursMonthPanel({
                             r.workPlace
                           )}
                         </td>
-                        <td className="py-1.5 pr-3 text-xs text-zinc-500 dark:text-zinc-400">{r.schedule}</td>
                         <td className="py-1.5">
                           {canEdit ? (
                             <input

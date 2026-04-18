@@ -603,20 +603,25 @@ export function AttendanceDayDetailView({
                   <li key={idx} className="mb-6 ml-1 last:mb-0">
                     <span className={cn(
                       "absolute -left-1.5 mt-1.5 size-3 rounded-full border-2 bg-white dark:bg-zinc-950",
-                      ev.kind === "offline_window"
-                        ? "border-orange-500"
-                        : ev.kind === "out_of_site_window"
-                          ? "border-red-500"
-                          : ev.kind === "overtime"
-                            ? "border-amber-400"
-                            : ev.kind === "offsite"
-                              ? "border-blue-400"
-                              : "border-violet-500"
+                      (ev as { isOvertime?: boolean }).isOvertime
+                        ? "border-amber-400"
+                        : ev.kind === "offline_window"
+                          ? "border-orange-500"
+                          : ev.kind === "out_of_site_window"
+                            ? "border-red-500"
+                            : ev.kind === "overtime"
+                              ? "border-amber-400"
+                              : ev.kind === "offsite"
+                                ? "border-blue-400"
+                                : "border-violet-500"
                     )} />
                     {ev.kind === "check_in" ? (
                       <div className="space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400/90">
-                          Check-in
+                        <p className={cn(
+                          "text-xs font-semibold uppercase tracking-wide",
+                          (ev as { isOvertime?: boolean }).isOvertime ? "text-amber-700 dark:text-amber-400/90" : "text-emerald-700 dark:text-emerald-400/90"
+                        )}>
+                          Check-in {(ev as { isOvertime?: boolean }).isOvertime ? "(Overtime)" : ""}
                         </p>
                         <p className="text-sm text-zinc-900 dark:text-zinc-200">
                           <strong>{String((ev as { siteName?: string }).siteName ?? "?")}</strong>
@@ -766,8 +771,11 @@ export function AttendanceDayDetailView({
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-                          Check-out {(ev as { auto?: boolean }).auto ? "(automatic)" : ""}
+                        <p className={cn(
+                          "text-xs font-semibold uppercase tracking-wide",
+                          (ev as { isOvertime?: boolean }).isOvertime ? "text-amber-700 dark:text-amber-400/90" : "text-zinc-600 dark:text-zinc-400"
+                        )}>
+                          Check-out {(ev as { auto?: boolean }).auto ? "(automatic)" : ""} {(ev as { isOvertime?: boolean }).isOvertime ? "(Overtime)" : ""}
                         </p>
                         <p className="text-sm text-zinc-900 dark:text-zinc-200">
                           <strong>{String((ev as { siteName?: string }).siteName ?? "?")}</strong> — end

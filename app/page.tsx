@@ -10,7 +10,7 @@ export default function HomePage() {
   return (
     <DashboardUserProvider>
       <BrowserTimeZoneSync />
-      <div className="relative flex min-h-screen flex-col overflow-hidden">
+      <div className="relative flex h-screen flex-col overflow-hidden">
         <div className="pointer-events-none absolute inset-0 hero-mesh opacity-90 dark:opacity-100" />
         <header className="relative z-10 flex items-center justify-between gap-3 px-3 py-4 md:px-6 md:py-5">
           <MtesBrandHeaderLink className="max-w-[min(100%,16rem)] md:max-w-lg" />
@@ -51,30 +51,7 @@ export default function HomePage() {
 
           <LocalTimezoneClock className="mt-14 max-w-lg" />
 
-          <div className="mt-20 grid w-full max-w-4xl gap-4 sm:grid-cols-3">
-            {[
-              {
-                t: "On-site check-in",
-                d: "Check-ins only count inside the work area your company defines.",
-              },
-              {
-                t: "Photo proof",
-                d: "A quick selfie ties each clock-in to a real person.",
-              },
-              {
-                t: "Live visibility",
-                d: "After check-in, admins can see active workers on the map.",
-              },
-            ].map((x) => (
-              <div
-                key={x.t}
-                className="glass-panel rounded-2xl p-5 text-left shadow-[0_0_40px_-20px_rgba(139,92,246,0.5)]"
-              >
-                <p className="font-medium text-foreground">{x.t}</p>
-                <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{x.d}</p>
-              </div>
-            ))}
-          </div>
+
         </main>
       </div>
     </DashboardUserProvider>

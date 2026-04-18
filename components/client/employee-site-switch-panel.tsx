@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, collection, query, where } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,7 +32,7 @@ import { cn } from "@/lib/utils";
 type Site = { id: string; name?: string };
 type TodayPayload = {
   siteId: string | null;
-  checkIn: { atMs: number | null } | null;
+  checkIn: { atMs: number | null; tag?: string | null } | null;
   checkOut: { atMs: number | null } | null;
   error?: string;
 };
@@ -56,6 +56,7 @@ export function EmployeeSiteSwitchPanel({
   const [currentSiteId, setCurrentSiteId] = React.useState<string | null>(null);
   const [sessionOpen, setSessionOpen] = React.useState(false);
   const [siteId, setSiteId] = React.useState("");
+  const [inTag, setInTag] = React.useState<string | null>(null);
   const [gps, setGps] = React.useState<GpsResult | null>(null);
   const [selfie, setSelfie] = React.useState<string | null>(null);
   const [step, setStep] = React.useState<FlowStep>(0);
@@ -160,6 +161,7 @@ export function EmployeeSiteSwitchPanel({
           const sid = open ? data.siteId ?? null : null;
           setSessionOpen(open);
           setCurrentSiteId(sid);
+          setInTag(data.checkIn?.tag || null);
         } catch {
           if (!cancelled) {
             setSessionOpen(false);
@@ -189,24 +191,36 @@ export function EmployeeSiteSwitchPanel({
         ? normalizeTimeZoneId(subjectTimeZone)
         : normalizeTimeZoneId(user?.timeZone);
       const day = calendarDateKeyInTimeZone(new Date(), tz);
-      const ref = doc(db, "attendance", `${workerId}_${day}`);
+      const q = query(
+        collection(db, "attendance"),
+        where("workerId", "==", workerId),
+        where("date", "==", day)
+      );
       unsubDoc = onSnapshot(
-        ref,
+        q,
         (snap) => {
-          const d = snap.data() as
-            | {
-                checkIn?: unknown;
-                checkOut?: unknown;
-                siteId?: string;
-              }
-            | undefined;
-          const open = !!(d?.checkIn && d?.checkOut == null);
-          setSessionOpen(open);
-          setCurrentSiteId(typeof d?.siteId === "string" ? d.siteId : null);
+          let openDoc: any = null;
+          for (const docSnap of snap.docs) {
+            const d = docSnap.data();
+            if (d.checkIn && !d.checkOut) {
+              openDoc = d;
+              break;
+            }
+          }
+          if (openDoc) {
+            setSessionOpen(true);
+            setCurrentSiteId(typeof openDoc.siteId === "string" ? openDoc.siteId : null);
+            setInTag(typeof openDoc.checkInTag === "string" ? openDoc.checkInTag : null);
+          } else {
+            setSessionOpen(false);
+            setCurrentSiteId(null);
+            setInTag(null);
+          }
         },
         () => {
           setSessionOpen(false);
           setCurrentSiteId(null);
+          setInTag(null);
         }
       );
     });
@@ -398,44 +412,32 @@ export function EmployeeSiteSwitchPanel({
     <Card className="bg-zinc-50/90 dark:bg-white/[0.02]">
       <CardHeader>
         <CardTitle className="text-base">Switch work site</CardTitle>
-        <CardDescription>
-          After you <strong className="text-zinc-300">check in</strong>, this section becomes active.
-          Switching records a <strong className="text-zinc-300">check-out from the site you are leaving</strong>{" "}
-          (same GPS + selfie at the <strong className="text-zinc-300">new</strong> site) and keeps your day
-          open. Your <strong className="text-zinc-300">final check-out</strong> is only when you use{" "}
-          <strong className="text-zinc-300">Check out</strong> — not here.
-        </CardDescription>
+
       </CardHeader>
     </Card>
   ) : otherSites.length === 0 ? (
     <Card className="bg-zinc-50/90 dark:bg-white/[0.02]">
       <CardHeader>
         <CardTitle className="text-base">Switch work site</CardTitle>
-        <CardDescription>
-          There is only one work site in your workspace besides where you are now, so there is nowhere to
-          switch to. An admin can add another site if your org works from multiple locations.
-        </CardDescription>
+
       </CardHeader>
     </Card>
   ) : (
     <Card className="border-cyan-500/25 bg-gradient-to-br from-cyan-500/[0.07] to-transparent">
       <CardHeader>
-        <CardTitle>Switch work site</CardTitle>
-        <CardDescription>
-          {currentSiteId ? (
-            <>
-              You are checked in at &ldquo;{siteNames[currentSiteId] ?? currentSiteId}&rdquo;. You must stay
-              at least <strong className="text-zinc-200">1 hour</strong> on the current site before switching
-              elsewhere (rule enforced on submit). Same flow as check-in: pick the new site, then GPS +
-              selfie at that site. Records segment check-out from the current site only — your day stays open
-              until <strong className="text-zinc-300">Check out</strong>. You can pick <strong className="text-zinc-300">any work site</strong>{" "}
-              (not limited to admin assignments — those apply to <strong className="text-zinc-300">Check in</strong>
-              only). The bell &ldquo;Go to Work&rdquo; link only nudges check-in.
-            </>
-          ) : (
-            "You are checked in."
+        <CardTitle className="flex items-center gap-2">
+          Switch work site
+          {inTag && (
+            <span className={cn(
+              "rounded-full px-2 py-0.5 text-xs font-medium tracking-wide border",
+              inTag === "overtime" ? "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-800/50" :
+              inTag === "late_checkin" ? "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/40 dark:text-rose-400 dark:border-rose-800/50" :
+              "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-800/50"
+            )}>
+              {inTag === "overtime" ? "Overtime" : inTag === "late_checkin" ? "Late Check-in" : "Regular"}
+            </span>
           )}
-        </CardDescription>
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 md:gap-6">
         <SiteSelectWithCustomRow
@@ -512,7 +514,7 @@ export function EmployeeSiteSwitchPanel({
                 ? "Capture"
                 : "Submit site switch"}
           </Button>
-          <p className="text-xs text-zinc-500">{primaryHint}</p>
+
         </div>
       </CardContent>
     </Card>

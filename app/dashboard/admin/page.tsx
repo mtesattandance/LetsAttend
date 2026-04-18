@@ -3,7 +3,7 @@ import {
   AdminDashboardStats,
   AdminPendingCheckoutsCard,
 } from "@/components/client/admin-dashboard-stats";
-import { AdminAssignSitesForm } from "@/components/client/admin-assign-sites-form";
+
 import { AdminSearchHub } from "@/components/client/admin-search-hub";
 import { AdminCalendarModeToggle } from "@/components/client/admin-calendar-mode-toggle";
 
@@ -28,12 +28,7 @@ export default function AdminOverviewPage() {
           <AdminSearchHub />
         </div>
 
-        <div className="mb-8 max-w-xl">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
-            Workers & sites
-          </h2>
-          <AdminAssignSitesForm />
-        </div>
+
 
         <AdminDashboardStats />
 

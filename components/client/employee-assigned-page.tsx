@@ -78,13 +78,7 @@ export function EmployeeAssignedPage() {
     <div className="p-3 sm:p-6 md:p-8">
       <div className="mx-auto max-w-2xl">
         <h1 className="text-2xl font-semibold tracking-tight">Assigned work</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          <strong className="font-medium text-zinc-300">Work</strong> (or refresh) uses your full
-          assigned site list for normal check-in. Use{" "}
-          <strong className="font-medium text-zinc-300">Assignment check-in</strong> below or{" "}
-          <strong className="font-medium text-zinc-300">Go to Work</strong> in the bell to open the same
-          focused flow (picker limited to these sites).
-        </p>
+
 
         <Card className="mt-6">
           <CardHeader>
@@ -92,11 +86,7 @@ export function EmployeeAssignedPage() {
               <MapPin className="size-5 text-cyan-500/90" aria-hidden />
               Your assigned sites
             </CardTitle>
-            <CardDescription>
-              {assigned.length === 0
-                ? "No sites assigned yet. Your admin will add them and you’ll get a notification."
-                : `${assigned.length} site${assigned.length === 1 ? "" : "s"} on your account.`}
-            </CardDescription>
+
           </CardHeader>
           <CardContent className="space-y-4">
             {loadingSites ? (

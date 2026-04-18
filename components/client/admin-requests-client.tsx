@@ -8,19 +8,20 @@ import { AdminOvertimeRequestsPanel } from "@/components/client/admin-overtime-r
 import { AdminOffsiteRequestsPanel } from "@/components/client/admin-offsite-requests-panel";
 import { AdminManualPunchRequestsPanel } from "@/components/client/admin-manual-punch-requests-panel";
 
-const TABS = ["login", "overtime", "offsite", "manual"] as const;
+const TABS = ["login", "overtime", "late_checkin", "manual_punch", "offsite"] as const;
 type Tab = (typeof TABS)[number];
 
 function normalizeTab(raw: string | null): Tab {
-  if (raw === "overtime" || raw === "offsite" || raw === "login" || raw === "manual") return raw;
+  if (raw === "overtime" || raw === "late_checkin" || raw === "manual_punch" || raw === "offsite" || raw === "login") return raw;
   return "login";
 }
 
 const TAB_LABEL: Record<Tab, string> = {
   login: "Login access",
   overtime: "Overtime",
+  late_checkin: "Late Check-in",
+  manual_punch: "Late Request",
   offsite: "Off-site",
-  manual: "Late Request",
 };
 
 export function AdminRequestsClient() {
@@ -41,7 +42,7 @@ export function AdminRequestsClient() {
       <div className="mb-6 md:mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">Requests</h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Login access after onboarding, overtime approvals, and off-site work — all in one place.
+          Login access after onboarding, overtime approvals, late requests, and off-site work — all in one place.
         </p>
       </div>
 
@@ -71,9 +72,10 @@ export function AdminRequestsClient() {
 
       <div role="tabpanel">
         {tab === "login" ? <AdminLoginAccessPanel /> : null}
-        {tab === "overtime" ? <AdminOvertimeRequestsPanel embedded /> : null}
+        {tab === "overtime" ? <AdminOvertimeRequestsPanel embedded typeFilter="overtime" /> : null}
+        {tab === "late_checkin" ? <AdminOvertimeRequestsPanel embedded typeFilter="late" /> : null}
+        {tab === "manual_punch" ? <AdminManualPunchRequestsPanel embedded /> : null}
         {tab === "offsite" ? <AdminOffsiteRequestsPanel embedded /> : null}
-        {tab === "manual" ? <AdminManualPunchRequestsPanel embedded /> : null}
       </div>
     </div>
   );

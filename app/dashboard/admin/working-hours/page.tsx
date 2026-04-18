@@ -317,7 +317,6 @@ export default function AdminWorkingHoursPage() {
               "Out Time",
               "Duty Hours",
               "Work Place",
-              "Schedule",
               "Remark",
             ],
           ],
@@ -329,7 +328,6 @@ export default function AdminWorkingHoursPage() {
             r.outTime,
             r.dutyHours.toFixed(2),
             r.workPlace,
-            r.schedule || "—",
             r.remark || "-",
           ]),
           foot: [[

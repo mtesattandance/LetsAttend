@@ -95,6 +95,7 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
   }, [pathname]);
 
   const [sites, setSites] = React.useState<Site[]>([]);
+  const [tag, setTag] = React.useState<"regular" | "overtime" | "late_checkin">("regular");
   const [siteId, setSiteId] = React.useState("");
   const [gps, setGps] = React.useState<GpsResult | null>(null);
   const [selfie, setSelfie] = React.useState<string | null>(null);
@@ -116,6 +117,7 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
   });
   const [busy, setBusy] = React.useState(false);
   const [done, setDone] = React.useState(false);
+  const [completed, setCompleted] = React.useState(false);
   const camRef = React.useRef<CameraCaptureHandle>(null);
   const displayTz = normalizeTimeZoneId(user?.timeZone);
   const authHeaders = React.useCallback(async () => {
@@ -168,9 +170,11 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
         });
         const data = (await res.json()) as TodayPayload;
         if (!res.ok || cancelled) return;
-        const open = !!data.checkIn && !data.checkOut;
-        setDone(open);
-        if (open && data.siteId) setSiteId(data.siteId);
+        const hasIn = !!data.checkIn;
+        const hasOut = !!data.checkOut;
+        setDone(hasIn && !hasOut);
+        setCompleted(hasIn && hasOut);
+        if (hasIn && !hasOut && data.siteId) setSiteId(data.siteId);
       } catch {
         /* ignore */
       }
@@ -336,13 +340,13 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
   const submitCheckIn = async () => {
     if (!siteId || !gps || !selfie) return;
     const w = workWindowRef.current;
-    if (w === "early" || w === "late" || w === "missed_check_in") {
+    if ((w === "early" || w === "late" || w === "missed_check_in") && tag === "regular") {
       toast.error(
         w === "early"
           ? "Check-in opens 15 minutes before shift start through 15 minutes after start, or use an overtime request."
           : w === "missed_check_in"
-            ? "You missed the regular check-in window — use an overtime request or contact your admin."
-            : "Regular check-in is not allowed after working hours — use an overtime request."
+            ? "You missed the regular check-in window — use Late Check-in."
+            : "Regular check-in is not allowed after working hours — use Overtime."
       );
       return;
     }
@@ -359,6 +363,7 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
           longitude: gps.longitude,
           accuracyM: gps.accuracyM,
           photoUrl,
+          tag,
           ...(proxyForUid ? { forWorkerId: proxyForUid } : {}),
         }),
       });
@@ -422,7 +427,7 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
 
   const startCaptureFlow = React.useCallback(async () => {
     const w = workWindowRef.current;
-    if (w === "early" || w === "late" || w === "missed_check_in") return;
+    if ((w === "early" || w === "late" || w === "missed_check_in") && tag === "regular") return;
     if (!siteId || busy || step !== 0 || done) return;
     setRadiusError(null);
     setStreamReady(false);
@@ -448,9 +453,9 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
     if (!siteId) return;
     if (!sites.some((s) => s.id === siteId)) return;
     const w = workWindowRef.current;
-    if (w === "early" || w === "late" || w === "missed_check_in") return;
+    if ((w === "early" || w === "late" || w === "missed_check_in") && tag === "regular") return;
     void startCaptureFlow();
-  }, [siteId, sites, workWindow, startCaptureFlow]);
+  }, [siteId, sites, workWindow, startCaptureFlow, tag]);
 
   const onPrimaryClick = async () => {
     setRadiusError(null);
@@ -493,9 +498,7 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
   const primaryDisabled =
     busy ||
     done ||
-    workWindow === "late" ||
-    workWindow === "missed_check_in" ||
-    workWindow === "early" ||
+    ((workWindow === "late" || workWindow === "missed_check_in" || workWindow === "early") && tag === "regular") ||
     (step === 0 && !siteId) ||
     (step === 1 && !streamReady) ||
     (step === 2 && (!gps || !selfie));
@@ -513,18 +516,7 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
     <Card id="employee-check-in">
       <CardHeader>
         <CardTitle>Check in</CardTitle>
-        <CardDescription>
-          {proxyForUid ? (
-            <>
-              Recording attendance for the <strong className="text-zinc-200">selected coworker</strong>.
-              GPS and selfie are validated on the server.
-            </>
-          ) : (
-            <>
-              Select your site to open camera. GPS is captured when you click picture.
-            </>
-          )}
-        </CardDescription>
+
       </CardHeader>
       <CardContent className="flex flex-col gap-4 md:gap-6">
         {fromAssignmentFlow && assignmentSiteLabels.length > 0 ? (
@@ -562,10 +554,53 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
           showCustomSiteButton
         />
 
-        <div className="space-y-2">
-          <p className="text-xs text-zinc-500">Camera</p>
-          {!selfie ? (
-            <CameraCapture
+        <div className="flex w-full items-center gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-white/5">
+          <button
+            type="button"
+            className={cn(
+              "flex-1 rounded-lg py-1.5 text-xs font-medium transition-all",
+              tag === "regular" ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300"
+            )}
+            onClick={() => setTag("regular")}
+          >
+            Regular
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "flex-1 rounded-lg py-1.5 text-xs font-medium transition-all",
+              tag === "overtime" ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300"
+            )}
+            onClick={() => setTag("overtime")}
+          >
+            Overtime
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "flex-1 rounded-lg py-1.5 text-xs font-medium transition-all",
+              tag === "late_checkin" ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300"
+            )}
+            onClick={() => setTag("late_checkin")}
+          >
+            Late Check-in
+          </button>
+        </div>
+
+        {completed && tag === "regular" ? (
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+            <CheckCircle2 className="mb-2 size-5 text-emerald-400" />
+            <strong className="font-medium text-emerald-100">Today&apos;s regular work is done.</strong>
+            <p className="mt-1 text-emerald-200/80">
+              You have completely checked in and checked out for your regular shift today. 
+              Select <strong>Overtime</strong> if you need to submit a brand new overtime session.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-xs text-zinc-500">Camera</p>
+            {!selfie ? (
+              <CameraCapture
               ref={camRef}
               hideControls
               onStreamReady={() => setStreamReady(true)}
@@ -583,9 +618,10 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
             />
           )}
         </div>
+        )}
 
         {/* Work window warning — full-screen portal modal when outside the site's working hours */}
-        {(workWindow === "late" || workWindow === "missed_check_in" || workWindow === "early") && !done
+        {(workWindow === "late" || workWindow === "missed_check_in" || workWindow === "early") && tag === "regular" && !done
           ? createPortal(
               <div
                 className="fixed inset-0 z-[8000] flex items-center justify-center p-4 sm:p-6 bg-black/75 backdrop-blur-md"
@@ -692,17 +728,21 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
                       )}
 
                       <div className="mt-5 flex flex-wrap justify-center gap-3 sm:justify-start">
-                        <Link
-                          href="/dashboard/employee/requests/overtime"
+                        <button
+                          type="button"
                           className={cn(
                             "inline-flex min-w-[140px] items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold hover:opacity-90",
                             workWindow === "late" || workWindow === "missed_check_in"
                               ? "bg-red-600 text-white hover:bg-red-500"
                               : "bg-amber-500 text-black hover:bg-amber-400"
                           )}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTag(workWindow === "missed_check_in" ? "late_checkin" : "overtime");
+                          }}
                         >
-                          Request Overtime
-                        </Link>
+                          Check in as {workWindow === "missed_check_in" ? "Late Check-in" : "Overtime"}
+                        </button>
                         <button
                           type="button"
                           className="min-w-[140px] rounded-lg border border-zinc-600 px-4 py-2 text-sm text-zinc-300 hover:bg-white/5"
@@ -739,30 +779,31 @@ function EmployeeCheckInPanelInner({ proxyForUid }: { proxyForUid?: string }) {
           />
         ) : null}
 
-        <div className="flex flex-col gap-2">
-          <Button
-            type="button"
-            className={done ? "bg-emerald-600 text-white hover:bg-emerald-600" : ""}
-            disabled={primaryDisabled}
-            onClick={() => void onPrimaryClick()}
-          >
-            {done ? (
-              <span className="inline-flex items-center gap-2">
-                <CheckCircle2 className="size-4" aria-hidden />
-                You are checked in
-              </span>
-            ) : busy
-              ? step === 0
-                ? "Opening camera…"
+        {completed && tag === "regular" ? null : (
+          <div className="flex flex-col gap-2">
+            <Button
+              type="button"
+              className={done ? "bg-emerald-600 text-white hover:bg-emerald-600" : ""}
+              disabled={primaryDisabled}
+              onClick={() => void onPrimaryClick()}
+            >
+              {done ? (
+                <span className="inline-flex items-center gap-2">
+                  <CheckCircle2 className="size-4" aria-hidden />
+                  You are checked in
+                </span>
+              ) : busy
+                ? step === 0
+                  ? "Opening camera…"
+                  : step === 1
+                    ? "Capturing…"
+                    : "Submitting…"
                 : step === 1
-                  ? "Capturing…"
-                  : "Submitting…"
-              : step === 1
-                ? "Capture"
-                : "Submit check-in"}
-          </Button>
-          <p className="text-xs text-zinc-500">{primaryHint}</p>
-        </div>
+                  ? "Capture"
+                  : "Submit check-in"}
+            </Button>
+          </div>
+        )}
 
       </CardContent>
     </Card>

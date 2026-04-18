@@ -122,9 +122,9 @@ export async function POST(req: Request) {
 
   const tz = timeZoneFromUserSnapshot(workerSnap);
   const day = calendarDateKeyInTimeZone(new Date(), tz);
-  const attRef = db.collection("attendance").doc(`${workerUid}_${day}`);
-  const attSnap = await attRef.get();
-  const existing = attSnap.data() as
+  let attRef = db.collection("attendance").doc(`${workerUid}_${day}`);
+  let attSnap = await attRef.get();
+  let existing = attSnap.data() as
     | {
         checkIn?: unknown;
         checkOut?: unknown;
@@ -132,6 +132,17 @@ export async function POST(req: Request) {
         siteSwitchLogs?: SwitchLog[] | unknown[];
       }
     | undefined;
+
+  // If the regular session is fully closed, check if they are trying to switch sites in an overtime session
+  if (existing?.checkIn && existing?.checkOut) {
+    const otRef = db.collection("attendance").doc(`${workerUid}_${day}_overtime`);
+    const otSnap = await otRef.get();
+    if (otSnap.exists) {
+      attRef = otRef;
+      attSnap = otSnap;
+      existing = otSnap.data() as any;
+    }
+  }
 
   if (!existing?.checkIn) {
     return jsonError("You must check in before switching sites.", 409);

@@ -59,7 +59,7 @@ function fmtGps(g: OvertimeStamp["gps"]) {
   return `${g.latitude.toFixed(6)}, ${g.longitude.toFixed(6)}${acc}`;
 }
 
-export function AdminOvertimeRequestsPanel({ embedded = false }: { embedded?: boolean }) {
+export function AdminOvertimeRequestsPanel({ embedded = false, typeFilter = "overtime" }: { embedded?: boolean, typeFilter?: "overtime" | "late" }) {
   const { mode } = useCalendarMode();
   const [items, setItems] = React.useState<Row[]>([]);
   const [sites, setSites] = React.useState<SiteOpt[]>([]);
@@ -102,8 +102,10 @@ export function AdminOvertimeRequestsPanel({ embedded = false }: { embedded?: bo
     setLoading(true);
     try {
       const h = await authHeaders();
-      const q =
-        filter === "all" ? "" : `?status=${encodeURIComponent(filter)}`;
+      const qParams = new URLSearchParams();
+      if (filter !== "all") qParams.set("status", filter);
+      if (typeFilter) qParams.set("type", typeFilter);
+      const q = `?${qParams.toString()}`;
       const res = await fetch(`/api/overtime${q}`, { headers: h });
       const data = (await res.json()) as { items?: Row[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Failed to load");
@@ -114,7 +116,7 @@ export function AdminOvertimeRequestsPanel({ embedded = false }: { embedded?: bo
     } finally {
       setLoading(false);
     }
-  }, [authHeaders, filter]);
+  }, [authHeaders, filter, typeFilter]);
 
   React.useEffect(() => {
     void loadSites();
@@ -155,7 +157,7 @@ export function AdminOvertimeRequestsPanel({ embedded = false }: { embedded?: bo
         setDoneFeedback({
           title: "Moved to pending",
           description:
-            "This request is open for review again. Recorded overtime check-in and check-out on this row were cleared.",
+            "This request is open for review again. Status is restored to pending approval.",
         });
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Error");
@@ -201,12 +203,12 @@ export function AdminOvertimeRequestsPanel({ embedded = false }: { embedded?: bo
         setDoneFeedback({
           title: "Request approved",
           description:
-            "The employee can record overtime check-in and check-out at the selected work site for this date.",
+            "The employee's attendance is now approved and recorded in the timesheet.",
         });
       } else if (status === "rejected") {
         setDoneFeedback({
           title: "Request rejected",
-          description: "The request is marked rejected. Any overtime attendance on this row was cleared.",
+          description: "The request is marked rejected. This attendance will not count towards paid hours.",
         });
       }
     } catch (e) {
@@ -229,7 +231,7 @@ export function AdminOvertimeRequestsPanel({ embedded = false }: { embedded?: bo
       await load();
       setDoneFeedback({
         title: "Request deleted",
-        description: "This overtime request was permanently removed.",
+        description: "This correction request was permanently removed.",
       });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Error");
@@ -244,7 +246,7 @@ export function AdminOvertimeRequestsPanel({ embedded = false }: { embedded?: bo
         <ConfirmActionModal
           open
           tone="danger"
-          title="Delete overtime request?"
+          title="Delete request?"
           description="This permanently removes the request from the queue. This cannot be undone."
           confirmLabel="Delete"
           busy={actionBusy}
@@ -265,8 +267,7 @@ export function AdminOvertimeRequestsPanel({ embedded = false }: { embedded?: bo
           description={
             <>
               <p>
-                Move this request back to <strong>pending</strong>? Recorded
-                overtime check-in and check-out on this row will be cleared.
+                Move this request back to <strong>pending</strong>?
               </p>
             </>
           }
@@ -291,7 +292,7 @@ export function AdminOvertimeRequestsPanel({ embedded = false }: { embedded?: bo
               <p>The employee will see this request as rejected.</p>
             ) : (
               <p>
-                Mark as rejected? Overtime attendance tied to this approval will be cleared.
+                Mark as rejected? This attendance will be invalidated.
               </p>
             )
           }
@@ -318,18 +319,14 @@ export function AdminOvertimeRequestsPanel({ embedded = false }: { embedded?: bo
 
       {!embedded ? (
         <div className="mb-6 md:mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight">Overtime</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{typeFilter === "late" ? "Late Requests" : "Overtime"}</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Review completed overtime sessions (GPS + selfie proof), then approve or reject. Employees record
-            overtime on{" "}
-            <strong className="text-zinc-900 dark:text-zinc-300">Employee → Requests → Overtime</strong> before
-            admin review.
+            Review completed {typeFilter === "late" ? "late check-ins" : "overtime sessions"} (GPS + selfie proof), then approve or reject.
           </p>
         </div>
       ) : (
         <p className="mb-4 text-sm text-zinc-500 dark:text-zinc-400">
-          Review overtime with GPS and selfie proof. Workers submit from{" "}
-          <strong className="text-zinc-900 dark:text-zinc-300">Employee → Requests → Overtime</strong>.
+          Review {typeFilter === "late" ? "late requests" : "overtime"} with GPS and selfie proof.
         </p>
       )}
 
@@ -352,7 +349,7 @@ export function AdminOvertimeRequestsPanel({ embedded = false }: { embedded?: bo
           <CardHeader>
             <CardTitle>Queue</CardTitle>
             <CardDescription>
-              Newest first. Workers submit overtime check-in and check-out first; approve only after both are present.
+              Newest first. {typeFilter === "late" ? "Late requests" : "Overtime requests"} that need your attention.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -433,7 +430,7 @@ export function AdminOvertimeRequestsPanel({ embedded = false }: { embedded?: bo
                       {(r.status === "approved" || (r.status === "pending" && (hasIn || hasOut))) ? (
                         <div className="mt-3 space-y-2 rounded-lg border border-violet-500/25 bg-violet-500/[0.06] p-3 text-xs dark:border-violet-500/20 dark:bg-violet-500/[0.04]">
                           <p className="font-medium text-violet-900 dark:text-violet-200/90">
-                            Overtime attendance
+                            Recorded attendance
                           </p>
                           {hasIn ? (
                             <div className="text-zinc-600 dark:text-zinc-400">
@@ -458,7 +455,7 @@ export function AdminOvertimeRequestsPanel({ embedded = false }: { embedded?: bo
                               ) : null}
                             </div>
                           ) : (
-                            <p className="text-amber-900 dark:text-amber-200/80">No overtime check-in yet.</p>
+                            <p className="text-amber-900 dark:text-amber-200/80">No check-in yet.</p>
                           )}
                           {hasOut ? (
                             <div className="text-zinc-600 dark:text-zinc-400">
@@ -517,7 +514,7 @@ export function AdminOvertimeRequestsPanel({ embedded = false }: { embedded?: bo
                           </label>
                           {!hasIn || !hasOut ? (
                             <p className="text-xs text-amber-700 dark:text-amber-300/90">
-                              Approve is enabled only after both overtime check-in and check-out are recorded.
+                              Approve is enabled only after both check-in and check-out are recorded.
                             </p>
                           ) : null}
                           <div className="flex flex-wrap gap-2">

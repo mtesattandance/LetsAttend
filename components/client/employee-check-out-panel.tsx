@@ -25,6 +25,7 @@ import { SiteSelectWithCustomRow } from "@/components/client/site-select-with-cu
 import { calendarDateKeyInTimeZone } from "@/lib/date/calendar-day-key";
 import { normalizeTimeZoneId } from "@/lib/date/time-zone";
 import { from24hUtc } from "@/lib/time/utc-12h";
+import { cn } from "@/lib/utils";
 
 type Site = { id: string; name?: string };
 
@@ -35,11 +36,12 @@ type CheckoutWindowState = "no_schedule" | "too_early" | "open" | "too_late";
 
 type TodayPayload = {
   siteId: string | null;
-  checkIn: { atMs: number | null } | null;
-  checkOut: { atMs: number | null } | null;
+  checkIn: { atMs: number | null; tag?: string | null } | null;
+  checkOut: { atMs: number | null; tag?: string | null } | null;
   workdayEndUtc?: string | null;
   checkoutGraceMinutes?: number | null;
   checkoutWindowState?: CheckoutWindowState | null;
+  status?: string | null;
   error?: string;
 };
 
@@ -55,12 +57,14 @@ export function EmployeeCheckOutPanel({
   proxyForUid?: string;
 } = {}) {
   const [sites, setSites] = React.useState<Site[]>([]);
+  const [tag, setTag] = React.useState<"regular" | "overtime" | "late_checkout">("regular");
   const [siteId, setSiteId] = React.useState("");
   const [gps, setGps] = React.useState<GpsResult | null>(null);
   const [selfie, setSelfie] = React.useState<string | null>(null);
   const [step, setStep] = React.useState<FlowStep>(0);
   const [streamReady, setStreamReady] = React.useState(false);
   const [successFeedback, setSuccessFeedback] = React.useState(false);
+  const [inTag, setInTag] = React.useState<string | null>(null);
   const [radiusError, setRadiusError] = React.useState<RadiusErr | null>(null);
   const [busy, setBusy] = React.useState(false);
   const camRef = React.useRef<CameraCaptureHandle>(null);
@@ -125,6 +129,17 @@ export function EmployeeCheckOutPanel({
       const sid = open ? data.siteId ?? null : null;
       setActiveSiteId(sid);
       if (sid) setSiteId(sid);
+      if (data.checkIn?.tag) {
+        setInTag(data.checkIn.tag);
+      } else {
+        setInTag(null);
+      }
+      if (data.checkIn?.tag === "overtime") {
+        setTag("overtime");
+      } else if (data.checkIn?.tag === "late_checkin") {
+        setTag("regular"); // It's a late check-in but the checkout could still be regular time
+      }
+
       if (!open || proxyForUid) {
         setCheckoutGate("none");
         setCheckoutHint(null);
@@ -180,13 +195,13 @@ export function EmployeeCheckOutPanel({
     setStreamReady,
   });
 
-  const startCaptureFlow = React.useCallback(async () => {
+  const startCaptureFlow = React.useCallback(async (manual = false) => {
     if (!siteId || busy || step !== 0) return;
     setRadiusError(null);
     setStreamReady(false);
     const cam = camRef.current;
     if (!cam) {
-      toast.error("Camera not ready");
+      if (manual) toast.error("Camera not ready");
       return;
     }
     setBusy(true);
@@ -195,7 +210,7 @@ export function EmployeeCheckOutPanel({
       setStep(1);
     } catch (e) {
       camRef.current?.stop();
-      toast.error(e instanceof Error ? e.message : "Could not open camera");
+      if (manual) toast.error(e instanceof Error ? e.message : "Could not open camera");
       return;
     } finally {
       setBusy(false);
@@ -204,7 +219,7 @@ export function EmployeeCheckOutPanel({
 
   React.useEffect(() => {
     if (!siteId) return;
-    void startCaptureFlow();
+    void startCaptureFlow(false);
   }, [siteId, startCaptureFlow]);
 
   const uploadSelfie = async (dataUrl: string) => {
@@ -238,6 +253,7 @@ export function EmployeeCheckOutPanel({
           longitude: gps.longitude,
           accuracyM: gps.accuracyM,
           photoUrl,
+          tag,
           ...(proxyForUid ? { forWorkerId: proxyForUid } : {}),
         }),
       });
@@ -278,7 +294,10 @@ export function EmployeeCheckOutPanel({
       return;
     }
 
-    if (step === 0) return;
+    if (step === 0) {
+      await startCaptureFlow(true);
+      return;
+    }
 
     if (step === 1) {
       if (!streamReady) return;
@@ -303,7 +322,7 @@ export function EmployeeCheckOutPanel({
   };
 
   const checkoutBlocked =
-    !proxyForUid && activeSiteId != null && checkoutGate === "too_late";
+    !proxyForUid && activeSiteId != null && checkoutGate === "too_late" && tag === "regular";
   const primaryDisabled =
     busy ||
     (step === 1 && !streamReady) ||
@@ -319,22 +338,19 @@ export function EmployeeCheckOutPanel({
   return (
     <Card id="employee-check-out">
       <CardHeader>
-        <CardTitle>Check out</CardTitle>
-        <CardDescription>
-          {proxyForUid ? (
-            <>
-              End the <strong className="text-zinc-200">selected coworker&apos;s</strong> open session for
-              today. Site must match their active check-in.
-            </>
-          ) : (
-            <>
-              Pick the site you are finishing at. Camera opens after site selection.
-              GPS is captured when you click picture.
-              No &ldquo;Custom site&rdquo; here — check-out is only at an existing location you already opened
-              today.
-            </>
+        <CardTitle className="flex items-center gap-2">
+          Check out
+          {inTag && (
+            <span className={cn(
+              "rounded-full px-2 py-0.5 text-xs font-medium tracking-wide border",
+              inTag === "overtime" ? "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-800/50" :
+              inTag === "late_checkin" ? "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/40 dark:text-rose-400 dark:border-rose-800/50" :
+              "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-800/50"
+            )}>
+              {inTag === "overtime" ? "Overtime" : inTag === "late_checkin" ? "Late Check-in" : "Regular"}
+            </span>
           )}
-        </CardDescription>
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 md:gap-6">
         <SiteSelectWithCustomRow
@@ -347,14 +363,59 @@ export function EmployeeCheckOutPanel({
           selectDisabled={!!activeSiteId}
         />
 
-        {!proxyForUid && checkoutGate === "too_late" ? (
+        <div className="flex w-full items-center gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-white/5">
+          <button
+            type="button"
+            className={cn(
+              "flex-1 rounded-lg py-1.5 text-xs font-medium transition-all",
+              tag === "regular" ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300",
+              inTag === "overtime" && "opacity-50 cursor-not-allowed"
+            )}
+            onClick={() => { if (inTag !== "overtime") setTag("regular"); }}
+            disabled={inTag === "overtime"}
+          >
+            Regular
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "flex-1 rounded-lg py-1.5 text-xs font-medium transition-all",
+              tag === "overtime" ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300",
+              inTag !== "overtime" && "opacity-50 cursor-not-allowed"
+            )}
+            onClick={() => { if (inTag === "overtime") setTag("overtime"); }}
+            disabled={inTag !== "overtime"}
+          >
+            Overtime
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "flex-1 rounded-lg py-1.5 text-xs font-medium transition-all",
+              tag === "late_checkout" ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300",
+              inTag === "overtime" && "opacity-50 cursor-not-allowed"
+            )}
+            onClick={() => { if (inTag !== "overtime") setTag("late_checkout"); }}
+            disabled={inTag === "overtime"}
+          >
+            Late Check-out
+          </button>
+        </div>
+
+        {inTag === "overtime" && (
+          <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+            You checked in as Overtime, so this session will be recorded as Overtime.
+          </p>
+        )}
+
+        {!proxyForUid && checkoutGate === "too_late" && tag === "regular" ? (
           <p className="rounded-lg border border-red-500/35 bg-red-500/10 px-3 py-2 text-sm text-red-100">
             The check-out window has closed. Time on your current site is not credited until an admin corrects
-            your attendance.
+            your attendance. Select <strong>Late Check-out</strong> or <strong>Overtime</strong> to request admin approval for a later out-time.
           </p>
         ) : null}
 
-        {!proxyForUid && checkoutGate === "too_late" ? (
+        {!proxyForUid && checkoutGate === "too_late" && tag === "regular" ? (
           <Button
             type="button"
             disabled
@@ -422,7 +483,7 @@ export function EmployeeCheckOutPanel({
                     ? "Capture"
                     : "Submit check-out"}
               </Button>
-              <p className="text-xs text-zinc-500">{primaryHint}</p>
+
             </div>
           </>
         )}

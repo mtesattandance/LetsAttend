@@ -13,22 +13,10 @@ const cards = [
     icon: LogIn,
   },
   {
-    href: "/dashboard/employee/requests/overtime",
-    title: "Overtime request",
-    description: "Request overtime and record approved overtime check-in and check-out.",
-    icon: Clock,
-  },
-  {
     href: "/dashboard/employee/requests/offsite",
     title: "Off-site request",
     description: "Request and manage off-site work with admin approval.",
     icon: Building2,
-  },
-  {
-    href: "/dashboard/employee/requests/manual",
-    title: "Late request",
-    description: "Request manual timeline adjustment for forgotten scans or missed working days.",
-    icon: FileWarning,
   },
 ] as const;
 
@@ -38,7 +26,7 @@ export function EmployeeRequestsHub() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Requests</h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Login access, overtime, and off-site requests are grouped here.
+          Login access and off-site requests are grouped here. Late/Overtime tagging is now available directly in the Check-in and Check-out panels.
         </p>
       </div>
       <ul className="grid gap-4 sm:grid-cols-1">

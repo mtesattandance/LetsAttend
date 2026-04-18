@@ -41,7 +41,7 @@ export async function PATCH(
   }
 
   const db = adminDb();
-  const ref = db.collection("overtimeRequests").doc(id);
+  const ref = db.collection("attendance").doc(id);
   const snap = await ref.get();
   if (!snap.exists) return jsonError("Not found", 404);
 
@@ -49,6 +49,8 @@ export async function PATCH(
     siteId?: string | null;
     workerId?: string;
     date?: string;
+    checkIn?: { time?: unknown };
+    checkOut?: { time?: unknown };
   };
 
   const mergedSite =
@@ -59,16 +61,14 @@ export async function PATCH(
 
   const now = FieldValue.serverTimestamp();
 
-  /** Back to queue: clears review + overtime GPS rows so the worker can start fresh after re-approval. */
+  /** Back to queue */
   if (parsed.data.status === "pending") {
     await ref.update({
-      status: "pending",
+      status: "pending_admin_approval",
       reviewNote: null,
       reviewedByUid: FieldValue.delete(),
       reviewedByEmail: FieldValue.delete(),
       reviewedAt: FieldValue.delete(),
-      overtimeCheckIn: FieldValue.delete(),
-      overtimeCheckOut: FieldValue.delete(),
       updatedAt: now,
     });
     return NextResponse.json({ ok: true });
@@ -82,8 +82,6 @@ export async function PATCH(
       reviewedByEmail: email ?? null,
       reviewedAt: now,
       updatedAt: now,
-      overtimeCheckIn: FieldValue.delete(),
-      overtimeCheckOut: FieldValue.delete(),
     });
     // Notify worker
     if (existing.workerId) {
@@ -109,14 +107,8 @@ export async function PATCH(
         400
       );
     }
-    const hasIn =
-      existing &&
-      typeof (existing as { overtimeCheckIn?: unknown }).overtimeCheckIn === "object" &&
-      ((existing as { overtimeCheckIn?: { time?: unknown } }).overtimeCheckIn?.time ?? null) != null;
-    const hasOut =
-      existing &&
-      typeof (existing as { overtimeCheckOut?: unknown }).overtimeCheckOut === "object" &&
-      ((existing as { overtimeCheckOut?: { time?: unknown } }).overtimeCheckOut?.time ?? null) != null;
+    const hasIn = existing.checkIn?.time != null;
+    const hasOut = existing.checkOut?.time != null;
     if (!hasIn || !hasOut) {
       return jsonError(
         "Approve after overtime is completed. Worker must submit both overtime check-in and check-out first.",
@@ -126,7 +118,7 @@ export async function PATCH(
   }
 
   const update: Record<string, unknown> = {
-    status: parsed.data.status,
+    status: parsed.data.status === "approved" ? "present" : parsed.data.status,
     reviewNote: parsed.data.note?.trim() || null,
     reviewedByUid: uid,
     reviewedByEmail: email ?? null,
@@ -170,7 +162,7 @@ export async function DELETE(
   const { id } = await ctx.params;
   if (!id?.trim()) return jsonError("Missing id", 400);
 
-  const ref = adminDb().collection("overtimeRequests").doc(id);
+  const ref = adminDb().collection("attendance").doc(id);
   const snap = await ref.get();
   if (!snap.exists) return jsonError("Not found", 404);
 

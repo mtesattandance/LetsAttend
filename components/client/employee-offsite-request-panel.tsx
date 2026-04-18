@@ -154,10 +154,7 @@ export function EmployeeOffsiteRequestPanel() {
     <Card id="employee-offsite">
       <CardHeader>
         <CardTitle>Off-site work</CardTitle>
-        <CardDescription>
-          Pick an admin contact, your planned window (local time), and reason. When you submit, we capture your
-          current GPS automatically (no extra tap). Any admin can approve and adjust times.
-        </CardDescription>
+
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <DateField

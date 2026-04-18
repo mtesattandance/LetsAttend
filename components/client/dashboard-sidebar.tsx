@@ -67,12 +67,12 @@ export function DashboardSidebar({ mobileOpen, onCloseMobile }: Props) {
     { href: "/dashboard/employee/check-out", label: "Check out", icon: CircleStop },
     { href: "/dashboard/employee/switch", label: "Switch", icon: ArrowLeftRight },
     { href: "/dashboard/employee/friend", label: "Friend check-in", icon: UserPlus },
-    { href: "/dashboard/employee/requests/manual", label: "Late request", icon: FileWarning },
+    { href: "/dashboard/employee/requests/manual", label: "Missed Attendance", icon: FileWarning },
     { href: "/dashboard/employee/assigned", label: "Assigned", icon: ClipboardList },
     { href: "/dashboard/employee/calendar", label: "Calendar", icon: Calendar },
     {
       href: "/dashboard/employee/working-hours",
-      label: "Working hours",
+      label: "Attendance report",
       icon: CalendarClock,
     },
   ];
@@ -82,13 +82,13 @@ export function DashboardSidebar({ mobileOpen, onCloseMobile }: Props) {
     const links: { href: string; label: string; icon: typeof LayoutDashboard }[] = [
       { href: adminBase, label: "Overview", icon: LayoutDashboard },
       { href: `${adminBase}/live`, label: "Live map", icon: Radio },
-      { href: `${adminBase}/workers`, label: "Workers", icon: Users },
+      { href: `${adminBase}/workers`, label: "Employee list", icon: Users },
       { href: `${adminBase}/assignments`, label: "Assignments", icon: ListChecks },
       { href: `${adminBase}/sites`, label: "Sites", icon: MapPin },
       { href: `${adminBase}/requests`, label: "Requests", icon: Inbox },
       {
         href: `${adminBase}/working-hours`,
-        label: "Working hours",
+        label: "Attendance report",
         icon: CalendarClock,
       },
       {

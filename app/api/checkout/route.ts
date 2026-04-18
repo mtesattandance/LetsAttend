@@ -22,6 +22,7 @@ const bodySchema = z.object({
   accuracyM: z.number().finite().optional(),
   photoUrl: z.string().url(),
   forWorkerId: z.string().min(1).optional(),
+  tag: z.enum(["regular", "overtime", "late_checkout"]).optional(),
 });
 
 export async function POST(req: Request) {
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return jsonError(parsed.error.issues[0]?.message ?? "Invalid body", 400);
   }
-  const { siteId, latitude, longitude, accuracyM, photoUrl, forWorkerId } = parsed.data;
+  const { siteId, latitude, longitude, accuracyM, photoUrl, forWorkerId, tag } = parsed.data;
 
   const db = adminDb();
   const callerRef = db.collection("users").doc(decoded.uid);
@@ -95,9 +96,20 @@ export async function POST(req: Request) {
 
   const tz = timeZoneFromUserSnapshot(workerSnap);
   const day = calendarDateKeyInTimeZone(new Date(), tz);
-  const attRef = db.collection("attendance").doc(`${workerUid}_${day}`);
-  const attSnap = await attRef.get();
-  const data = attSnap.data() as { checkIn?: unknown; checkOut?: unknown; siteId?: string } | undefined;
+  let attRef = db.collection("attendance").doc(`${workerUid}_${day}`);
+  let attSnap = await attRef.get();
+  let data = attSnap.data() as { checkIn?: unknown; checkOut?: unknown; siteId?: string } | undefined;
+
+  // If the regular session is fully closed, check if they are trying to check out of an overtime session
+  if (data?.checkIn && data?.checkOut) {
+    const otRef = db.collection("attendance").doc(`${workerUid}_${day}_overtime`);
+    const otSnap = await otRef.get();
+    if (otSnap.exists) {
+      attRef = otRef;
+      attSnap = otSnap;
+      data = otSnap.data() as { checkIn?: unknown; checkOut?: unknown; siteId?: string } | undefined;
+    }
+  }
 
   if (!data?.checkIn) return jsonError("No check-in for today", 409);
   if (data.checkOut) return jsonError("Already checked out", 409);
@@ -124,14 +136,18 @@ export async function POST(req: Request) {
     nowMs: Date.now(),
   });
   if (coState === "too_late") {
-    return jsonError(
-      `Check-out window ended (${checkoutGrace} minutes after shift end). The system will auto-checkout this session.`,
-      403
-    );
+    if (tag !== "overtime" && tag !== "late_checkout") {
+      return jsonError(
+        `Check-out window ended (${checkoutGrace} minutes after shift end). The system will auto-checkout this session.`,
+        403
+      );
+    }
   }
 
   let checkOutTime: Timestamp | ReturnType<typeof FieldValue.serverTimestamp>;
-  if (coState === "open" && workdayEndHm) {
+  if (tag === "overtime" || tag === "late_checkout") {
+    checkOutTime = FieldValue.serverTimestamp();
+  } else if (coState === "open" && workdayEndHm) {
     const deadlineMs = zonedWallClockToUtcMillis(day, workdayEndHm, scheduleZone);
     checkOutTime =
       deadlineMs != null ? Timestamp.fromMillis(deadlineMs) : FieldValue.serverTimestamp();
@@ -153,11 +169,17 @@ export async function POST(req: Request) {
     checkOutPayload.recordedByUid = recordedByUid;
   }
 
+  const updatePayload: Record<string, unknown> = {
+    checkOut: checkOutPayload,
+    checkOutTag: tag || "regular",
+    updatedAt,
+  };
+  if (tag === "overtime" || tag === "late_checkout") {
+    updatePayload.status = "pending_admin_approval";
+  }
+
   await attRef.set(
-    {
-      checkOut: checkOutPayload,
-      updatedAt,
-    },
+    updatePayload,
     { merge: true }
   );
 
