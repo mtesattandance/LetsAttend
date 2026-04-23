@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import * as React from "react";
 import {
   ArrowLeftRight,
+  Building2,
   Calendar,
   CalendarClock,
   CircleStop,
@@ -68,6 +69,7 @@ export function DashboardSidebar({ mobileOpen, onCloseMobile }: Props) {
     { href: "/dashboard/employee/switch", label: "Switch", icon: ArrowLeftRight },
     { href: "/dashboard/employee/friend", label: "Friend check-in", icon: UserPlus },
     { href: "/dashboard/employee/requests/manual", label: "Missed Attendance", icon: FileWarning },
+    { href: "/dashboard/employee/requests/offsite", label: "Off-site", icon: Building2 },
     { href: "/dashboard/employee/assigned", label: "Assigned", icon: ClipboardList },
     { href: "/dashboard/employee/calendar", label: "Calendar", icon: Calendar },
     {

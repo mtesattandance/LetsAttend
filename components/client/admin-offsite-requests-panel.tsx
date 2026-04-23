@@ -303,10 +303,10 @@ export function AdminOffsiteRequestsPanel({ embedded = false }: { embedded?: boo
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div>
                           <p className="font-medium text-zinc-900 dark:text-zinc-100">
-                            {r.workerName ?? r.workerEmail ?? r.workerId ?? "Worker"}
+                            {r.workerName || r.workerEmail || r.workerId || "Worker"}
                           </p>
                           <p className="text-xs text-zinc-500">
-                            {r.workerEmail ?? "—"} · UID {r.workerId ?? "—"}
+                            {r.workerEmail ?? "—"}
                           </p>
                         </div>
                         <span

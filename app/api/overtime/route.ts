@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { FieldValue, adminDb } from "@/lib/firebase/admin";
+import { FieldPath } from "firebase-admin/firestore";
 import { requireBearerUser } from "@/lib/auth/verify-request";
 import { jsonError } from "@/lib/api/json-error";
 import { assertAdmin } from "@/lib/auth/assert-admin";
@@ -44,7 +45,13 @@ export async function GET(req: Request) {
 
     let items = snap.docs.map((d: any) => {
       const data = d.data();
-      return serializeFirestoreForJson({
+        const inTag = data.checkInTag || "regular";
+        const outTag = data.checkOutTag || "regular";
+        const tags = [];
+        if (inTag !== "regular") tags.push(`Check-in: ${inTag.replace("_", " ")}`);
+        if (outTag !== "regular") tags.push(`Check-out: ${outTag.replace("_", " ")}`);
+        
+        return serializeFirestoreForJson({
         id: d.id,
         workerId: data.workerId,
         date: data.date,
@@ -53,7 +60,7 @@ export async function GET(req: Request) {
         createdAt: data.updatedAt,
         overtimeCheckIn: data.checkIn,
         overtimeCheckOut: data.checkOut,
-        reason: `[Checkin: ${data.checkInTag || "regular"}] [Checkout: ${data.checkOutTag || "regular"}]`,
+        reason: tags.length > 0 ? tags.join(" • ") : "Standard attendance",
       });
     });
 
@@ -62,6 +69,29 @@ export async function GET(req: Request) {
       const tb = b.createdAt?.seconds ?? 0;
       return tb - ta;
     });
+
+    const userIds = Array.from(new Set(items.map((i: any) => i.workerId).filter(Boolean)));
+    if (userIds.length > 0) {
+      const usersMap = new Map();
+      // Firestore 'in' query supports up to 30 elements. Batch if necessary.
+      const batches = [];
+      for (let i = 0; i < userIds.length; i += 30) {
+        batches.push(userIds.slice(i, i + 30));
+      }
+      for (const batch of batches) {
+        const uSnap = await db.collection("users").where(FieldPath.documentId(), "in", batch).get();
+        uSnap.forEach((doc: any) => usersMap.set(doc.id, doc.data()));
+      }
+      
+      items = items.map((i: any) => {
+        const u = usersMap.get(i.workerId);
+        return {
+          ...i,
+          workerName: u?.name ?? null,
+          workerEmail: u?.email ?? null,
+        };
+      });
+    }
 
     if (statusFilter === "approved") {
       items = items.filter((i: any) => i.reason.includes("overtime") || i.reason.includes("late"));

@@ -43,6 +43,7 @@ export function AdminManualPunchRequestsPanel({ embedded = false }: { embedded?:
   const [loading, setLoading] = React.useState(true);
   const [filter, setFilter] = React.useState<"all" | "pending" | "approved" | "rejected">("pending");
   const [actionBusy, setActionBusy] = React.useState(false);
+  const [sites, setSites] = React.useState<{ id: string; name?: string }[]>([]);
 
   const [confirm, setConfirm] = React.useState<
     | null
@@ -60,6 +61,17 @@ export function AdminManualPunchRequestsPanel({ embedded = false }: { embedded?:
     const token = await u.getIdToken();
     return { Authorization: `Bearer ${token}` };
   }, []);
+
+  const loadSites = React.useCallback(async () => {
+    try {
+      const h = await authHeaders();
+      const res = await fetch("/api/sites", { headers: h });
+      const data = (await res.json()) as { sites?: { id: string; name?: string }[] };
+      if (res.ok) setSites(data.sites ?? []);
+    } catch {
+      setSites([]);
+    }
+  }, [authHeaders]);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -79,8 +91,21 @@ export function AdminManualPunchRequestsPanel({ embedded = false }: { embedded?:
   }, [filter, authHeaders]);
 
   React.useEffect(() => {
+    void loadSites();
+  }, [loadSites]);
+
+  React.useEffect(() => {
     void load();
   }, [load]);
+
+  const siteName = React.useCallback(
+    (id: string | null | undefined) => {
+      if (!id) return "Unknown Site";
+      const s = sites.find((x) => x.id === id);
+      return s?.name ?? id;
+    },
+    [sites]
+  );
 
   const doAction = async (id: string, action: "approved" | "rejected" | "pending") => {
     if (actionBusy) return;
@@ -227,7 +252,7 @@ export function AdminManualPunchRequestsPanel({ embedded = false }: { embedded?:
                       {row.segments?.map((seg, idx) => (
                         <li key={idx} className="flex gap-2 text-zinc-800 dark:text-zinc-300">
                           <span className="bg-indigo-100 dark:bg-indigo-900/50 px-1.5 py-0.5 rounded text-xs font-mono">
-                            Block {idx + 1}
+                            Block {idx + 1} ({siteName(seg.siteId)})
                           </span>
                           <span>In: {formatWallHm12h(seg.inHm)}</span>
                           <span className="text-zinc-400">→</span>

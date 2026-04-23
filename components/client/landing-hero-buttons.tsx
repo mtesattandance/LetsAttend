@@ -15,6 +15,7 @@ import {
   Menu,
   Sparkles,
   UserPlus,
+  FileWarning,
 } from "lucide-react";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import { Button } from "@/components/ui/button";
@@ -72,6 +73,12 @@ export function LandingHeroButtons() {
                 <Link href="/dashboard/employee/switch" className="flex items-center gap-2">
                   <ArrowRightLeft className="size-4" aria-hidden />
                   Switch site
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/dashboard/employee/requests/manual" className="flex items-center gap-2">
+                  <FileWarning className="size-4" aria-hidden />
+                  Missed Attendance
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>

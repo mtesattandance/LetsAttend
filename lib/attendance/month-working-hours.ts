@@ -227,16 +227,53 @@ export async function buildWorkerMonthWorkingHours(
 
   const dayDetails = await Promise.all(dayKeys.map((dayKey) => buildWorkerDayDetail(db, workerId, dayKey)));
 
+  const editsSnap = await db.collection("attendance_edits")
+    .where("workerId", "==", workerId)
+    .where("month", "==", monthYyyyMm.trim())
+    .get();
+  
+  const editsMap = new Map<string, any>();
+  for (const doc of editsSnap.docs) {
+    editsMap.set(doc.get("rowId"), doc.data());
+  }
+
   for (let i = 0; i < dayKeys.length; i++) {
     const dayKey = dayKeys[i]!;
     const detail = dayDetails[i]!;
-    const part = creditedMsFromDayDetail(detail);
-    days.push({ day: dayKey, ...part });
-    entries.push(...buildDayEntryRows(dayKey, z, detail));
-    sums.regularSessionMs += part.regularSessionMs;
-    sums.approvedOvertimeMs += part.approvedOvertimeMs;
-    sums.approvedOffsiteMs += part.approvedOffsiteMs;
-    sums.totalMs += part.totalMs;
+    
+    const dayRows = buildDayEntryRows(dayKey, z, detail);
+
+    let regularSessionMs = 0;
+    let approvedOvertimeMs = 0;
+    let approvedOffsiteMs = 0;
+
+    for (const row of dayRows) {
+      const override = editsMap.get(row.id);
+      if (override) {
+        if (typeof override.inTime === "string") row.inTime = override.inTime;
+        if (typeof override.outTime === "string") row.outTime = override.outTime;
+        if (typeof override.dutyHours === "number" || typeof override.dutyHours === "string") {
+            row.dutyHours = Math.max(0, Number(override.dutyHours) || 0);
+        }
+        if (typeof override.workPlace === "string") row.workPlace = override.workPlace;
+        if (typeof override.remark === "string") row.remark = override.remark;
+      }
+      
+      entries.push(row);
+
+      const ms = row.dutyHours * 3600000;
+      if (row.kind === "on_site") regularSessionMs += ms;
+      else if (row.kind === "overtime") approvedOvertimeMs += ms;
+      else if (row.kind === "off_site") approvedOffsiteMs += ms;
+    }
+
+    const totalMs = regularSessionMs + approvedOvertimeMs + approvedOffsiteMs;
+    days.push({ day: dayKey, regularSessionMs, approvedOvertimeMs, approvedOffsiteMs, totalMs });
+
+    sums.regularSessionMs += regularSessionMs;
+    sums.approvedOvertimeMs += approvedOvertimeMs;
+    sums.approvedOffsiteMs += approvedOffsiteMs;
+    sums.totalMs += totalMs;
   }
 
   const totalHours = sums.totalMs / 3_600_000;

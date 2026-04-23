@@ -383,10 +383,10 @@ export function AdminOvertimeRequestsPanel({ embedded = false, typeFilter = "ove
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div>
                           <p className="font-medium text-zinc-900 dark:text-zinc-100">
-                            {r.workerName ?? r.workerEmail ?? r.workerId ?? "Worker"}
+                            {r.workerName || r.workerEmail || r.workerId || "Worker"}
                           </p>
                           <p className="text-xs text-zinc-500">
-                            {r.workerEmail ?? "—"} · UID {r.workerId ?? "—"}
+                            {r.workerEmail ?? "—"}
                           </p>
                         </div>
                         <span
@@ -408,10 +408,7 @@ export function AdminOvertimeRequestsPanel({ embedded = false, typeFilter = "ove
                         </div>
                         <div>
                           <span className="text-zinc-500">Site: </span>
-                          {siteName(typeof r.siteId === "string" ? r.siteId : null)}{" "}
-                          {r.siteId ? (
-                            <span className="font-mono text-zinc-600">({r.siteId})</span>
-                          ) : null}
+                          {siteName(typeof r.siteId === "string" ? r.siteId : null)}
                         </div>
                         <div>
                           <span className="text-zinc-500">Submitted: </span>

@@ -24,6 +24,7 @@ import autoTable from "jspdf-autotable";
 import { useDashboardUser } from "@/components/client/dashboard-user-context";
 import { useCalendarMode } from "@/components/client/calendar-mode-context";
 import { formatIsoForCalendar, monthLabelForModeYm, convertMonthMode, currentMonthYyyyMmForMode, adIsoToBsIso } from "@/lib/date/bs-calendar";
+import { Loader2 } from "lucide-react";
 
 type DayRow = {
   day: string;
@@ -113,6 +114,19 @@ export function WorkingHoursMonthPanel({
   const [periodEndMonth, setPeriodEndMonth] = React.useState(() => currentMonthYyyyMmForMode(mode, zone));
   const [mounted, setMounted] = React.useState(false);
   const [downloading, setDownloading] = React.useState(false);
+  const [savingEdits, setSavingEdits] = React.useState(false);
+  
+  const [downloadStatus, setDownloadStatus] = React.useState("");
+  const [downloadDoneCount, setDownloadDoneCount] = React.useState(0);
+  const [downloadTotalCount, setDownloadTotalCount] = React.useState(0);
+  const cancelDownloadRef = React.useRef(false);
+  const activeFetchControllerRef = React.useRef<AbortController | null>(null);
+
+  const cancelDownload = React.useCallback(() => {
+    cancelDownloadRef.current = true;
+    setDownloadStatus("Cancelling download...");
+    activeFetchControllerRef.current?.abort();
+  }, []);
 
   const prevModeRef = React.useRef(mode);
 
@@ -186,6 +200,78 @@ export function WorkingHoursMonthPanel({
     }
     return month;
   }, [mode, month]);
+
+  const handleEditChange = React.useCallback(
+    (id: string, field: string, value: string, r: Payload["entries"][number]) => {
+      setEdits((prev) => {
+        const current = prev[id] || {
+          inTime: r.inTime,
+          outTime: r.outTime,
+          dutyHours: r.dutyHours.toFixed(2),
+          workPlace: r.workPlace,
+          remark: r.remark,
+        };
+        const updated = { ...current, [field]: value };
+        
+        if (field === "inTime" || field === "outTime") {
+          const t1 = DateTime.fromFormat(updated.inTime.trim(), "h:mm a");
+          const t2 = DateTime.fromFormat(updated.outTime.trim(), "h:mm a");
+          if (t1.isValid && t2.isValid) {
+            let diff = t2.diff(t1, "hours").hours;
+            if (diff < 0) diff += 24;
+            updated.dutyHours = diff.toFixed(2);
+          }
+        }
+        return { ...prev, [id]: updated };
+      });
+    },
+    []
+  );
+
+  const saveEdits = React.useCallback(async () => {
+    const editKeys = Object.keys(edits);
+    if (editKeys.length === 0) return;
+    setSavingEdits(true);
+    try {
+      const auth = getFirebaseAuth();
+      const u = auth.currentUser;
+      if (!u) throw new Error("Not signed in");
+      const token = await u.getIdToken();
+      
+      const payloadEdits = editKeys.map((rowId) => ({
+        rowId,
+        inTime: edits[rowId]!.inTime,
+        outTime: edits[rowId]!.outTime,
+        dutyHours: Number(edits[rowId]!.dutyHours),
+        workPlace: edits[rowId]!.workPlace,
+        remark: edits[rowId]!.remark,
+      }));
+
+      const res = await fetch("/api/attendance/update-records", {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          workerId: workerId || u.uid,
+          month,
+          edits: payloadEdits,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Failed to save edits");
+      
+      toast.success("Changes saved successfully!");
+      setEdits({});
+      void load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save edits");
+    } finally {
+      setSavingEdits(false);
+    }
+  }, [edits, month, workerId, load]);
 
   const mergedRows = React.useMemo(() => {
     if (!data) return [];
@@ -346,6 +432,7 @@ export function WorkingHoursMonthPanel({
               })()
             : []),
         ],
+        showFoot: "lastPage",
         styles: { fontSize: 8, cellPadding: 5.5 },
         headStyles: { fillColor: [24, 24, 27], textColor: [255, 255, 255], fontSize: 8, cellPadding: 5.5 },
         footStyles: { fillColor: [245, 245, 245], textColor: [20, 20, 20], fontSize: 8, cellPadding: 5.5 },
@@ -400,7 +487,11 @@ export function WorkingHoursMonthPanel({
   }, [data, month, renderPdf, titleMonth, wageRate, overtimeRate]);
 
   const downloadYearPdf = React.useCallback(async () => {
+    cancelDownloadRef.current = false;
     setDownloading(true);
+    setDownloadStatus("Gathering year data...");
+    setDownloadDoneCount(0);
+    setDownloadTotalCount(12);
     try {
       const auth = getFirebaseAuth();
       const u = auth.currentUser;
@@ -410,26 +501,47 @@ export function WorkingHoursMonthPanel({
         `${String(year).padStart(4, "0")}-${String(i + 1).padStart(2, "0")}`
       );
       const list: Payload[] = [];
+      let done = 0;
       for (const m of months) {
+        if (cancelDownloadRef.current) throw new Error("Download cancelled");
         const q = new URLSearchParams({ month: m, mode });
         if (workerId) q.set("workerId", workerId);
+        
+        const controller = new AbortController();
+        activeFetchControllerRef.current = controller;
+        
         const res = await fetch(`/api/attendance/working-hours?${q}`, {
           headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
         });
+        
+        activeFetchControllerRef.current = null;
+        
         const json = (await res.json()) as Payload & { error?: string };
         if (!res.ok) throw new Error(json.error ?? `Failed to load ${m}`);
         list.push(json);
+        done++;
+        setDownloadDoneCount(done);
       }
+      
+      setDownloadStatus("Generating PDF...");
       await renderPdf(list, `${year}`, `${year}`, wageRate, overtimeRate);
+      toast.success("PDF downloaded!");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to download PDF");
+      const msg = e instanceof Error ? e.message : "Failed to download PDF";
+      if (/cancelled|abort/i.test(msg)) toast.message("Download cancelled.");
+      else toast.error(msg);
     } finally {
       setDownloading(false);
+      activeFetchControllerRef.current = null;
     }
-  }, [renderPdf, workerId, year, zone, wageRate, overtimeRate]);
+  }, [renderPdf, workerId, year, zone, wageRate, overtimeRate, mode]);
 
   const downloadPeriodPdf = React.useCallback(async () => {
+    cancelDownloadRef.current = false;
     setDownloading(true);
+    setDownloadStatus("Gathering period data...");
+    setDownloadDoneCount(0);
     try {
       const auth = getFirebaseAuth();
       const u = auth.currentUser;
@@ -453,17 +565,32 @@ export function WorkingHoursMonthPanel({
               return out;
             })();
 
+      setDownloadTotalCount(months.length);
       const list: Payload[] = [];
+      let done = 0;
       for (const m of months) {
+        if (cancelDownloadRef.current) throw new Error("Download cancelled");
         const q = new URLSearchParams({ month: m, mode });
         if (workerId) q.set("workerId", workerId);
+        
+        const controller = new AbortController();
+        activeFetchControllerRef.current = controller;
+        
         const res = await fetch(`/api/attendance/working-hours?${q}`, {
           headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
         });
+        
+        activeFetchControllerRef.current = null;
+        
         const json = (await res.json()) as Payload & { error?: string };
         if (!res.ok) throw new Error(json.error ?? `Failed to load ${m}`);
         list.push(json);
+        done++;
+        setDownloadDoneCount(done);
       }
+      
+      setDownloadStatus("Generating PDF...");
       const title =
         periodMode === "year"
           ? `${periodYear}`
@@ -474,10 +601,14 @@ export function WorkingHoursMonthPanel({
           : `${periodStartMonth}-${periodEndMonth}`;
       await renderPdf(list, title, suffix, wageRate, overtimeRate);
       setPeriodOpen(false);
+      toast.success("PDF downloaded!");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to download PDF");
+      const msg = e instanceof Error ? e.message : "Failed to download PDF";
+      if (/cancelled|abort/i.test(msg)) toast.message("Download cancelled.");
+      else toast.error(msg);
     } finally {
       setDownloading(false);
+      activeFetchControllerRef.current = null;
     }
   }, [mode, periodEndMonth, periodMode, periodStartMonth, periodYear, renderPdf, workerId, zone, wageRate, overtimeRate]);
 
@@ -683,9 +814,21 @@ export function WorkingHoursMonthPanel({
             <CardContent className="overflow-x-auto">
               <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
                 <p className="text-xs text-zinc-500">Monthly export for {titleMonth}</p>
-                <Button type="button" variant="secondary" disabled={downloading} onClick={() => void downloadMonthPdf()}>
-                  {downloading ? "Preparing PDF..." : "Download PDF"}
-                </Button>
+                <div className="flex gap-2">
+                  {canEdit && Object.keys(edits).length > 0 && (
+                    <Button
+                      type="button"
+                      disabled={savingEdits}
+                      onClick={() => void saveEdits()}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                    >
+                      {savingEdits ? "Saving..." : "Save Changes"}
+                    </Button>
+                  )}
+                  <Button type="button" variant="secondary" disabled={downloading} onClick={() => void downloadMonthPdf()}>
+                    {downloading ? "Preparing PDF..." : "Download PDF"}
+                  </Button>
+                </div>
               </div>
               <table className="w-full min-w-[940px] border-collapse text-sm">
                 <thead>
@@ -735,18 +878,7 @@ export function WorkingHoursMonthPanel({
                             <input
                               type="text"
                               value={edits[r.id]?.inTime ?? r.inTime}
-                              onChange={(e) =>
-                                setEdits((prev) => ({
-                                  ...prev,
-                                  [r.id]: {
-                                    inTime: e.target.value,
-                                    outTime: prev[r.id]?.outTime ?? r.outTime,
-                                    dutyHours: prev[r.id]?.dutyHours ?? r.dutyHours.toFixed(2),
-                                    workPlace: prev[r.id]?.workPlace ?? r.workPlace,
-                                    remark: prev[r.id]?.remark ?? r.remark,
-                                  },
-                                }))
-                              }
+                              onChange={(e) => handleEditChange(r.id, "inTime", e.target.value, r)}
                               className="w-20 rounded-md border border-zinc-300 bg-white px-1.5 py-1 text-xs dark:border-white/15 dark:bg-zinc-950"
                             />
                           ) : (
@@ -758,18 +890,7 @@ export function WorkingHoursMonthPanel({
                             <input
                               type="text"
                               value={edits[r.id]?.outTime ?? r.outTime}
-                              onChange={(e) =>
-                                setEdits((prev) => ({
-                                  ...prev,
-                                  [r.id]: {
-                                    inTime: prev[r.id]?.inTime ?? r.inTime,
-                                    outTime: e.target.value,
-                                    dutyHours: prev[r.id]?.dutyHours ?? r.dutyHours.toFixed(2),
-                                    workPlace: prev[r.id]?.workPlace ?? r.workPlace,
-                                    remark: prev[r.id]?.remark ?? r.remark,
-                                  },
-                                }))
-                              }
+                              onChange={(e) => handleEditChange(r.id, "outTime", e.target.value, r)}
                               className="w-20 rounded-md border border-zinc-300 bg-white px-1.5 py-1 text-xs dark:border-white/15 dark:bg-zinc-950"
                             />
                           ) : (
@@ -783,18 +904,7 @@ export function WorkingHoursMonthPanel({
                               step="0.25"
                               min="0"
                               value={edits[r.id]?.dutyHours ?? r.dutyHours.toFixed(2)}
-                              onChange={(e) =>
-                                setEdits((prev) => ({
-                                  ...prev,
-                                  [r.id]: {
-                                    inTime: prev[r.id]?.inTime ?? r.inTime,
-                                    outTime: prev[r.id]?.outTime ?? r.outTime,
-                                    dutyHours: e.target.value,
-                                    workPlace: prev[r.id]?.workPlace ?? r.workPlace,
-                                    remark: prev[r.id]?.remark ?? r.remark,
-                                  },
-                                }))
-                              }
+                              onChange={(e) => handleEditChange(r.id, "dutyHours", e.target.value, r)}
                               className="w-20 rounded-md border border-zinc-300 bg-white px-1.5 py-1 text-xs dark:border-white/15 dark:bg-zinc-950"
                             />
                           ) : (
@@ -806,18 +916,7 @@ export function WorkingHoursMonthPanel({
                             <input
                               type="text"
                               value={edits[r.id]?.workPlace ?? r.workPlace}
-                              onChange={(e) =>
-                                setEdits((prev) => ({
-                                  ...prev,
-                                  [r.id]: {
-                                    inTime: prev[r.id]?.inTime ?? r.inTime,
-                                    outTime: prev[r.id]?.outTime ?? r.outTime,
-                                    dutyHours: prev[r.id]?.dutyHours ?? r.dutyHours.toFixed(2),
-                                    workPlace: e.target.value,
-                                    remark: prev[r.id]?.remark ?? r.remark,
-                                  },
-                                }))
-                              }
+                              onChange={(e) => handleEditChange(r.id, "workPlace", e.target.value, r)}
                               className="w-full min-w-28 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-white/15 dark:bg-zinc-950"
                             />
                           ) : (
@@ -829,18 +928,7 @@ export function WorkingHoursMonthPanel({
                             <input
                               type="text"
                               value={edits[r.id]?.remark ?? r.remark}
-                              onChange={(e) =>
-                                setEdits((prev) => ({
-                                  ...prev,
-                                  [r.id]: {
-                                    inTime: prev[r.id]?.inTime ?? r.inTime,
-                                    outTime: prev[r.id]?.outTime ?? r.outTime,
-                                    dutyHours: prev[r.id]?.dutyHours ?? r.dutyHours.toFixed(2),
-                                    workPlace: prev[r.id]?.workPlace ?? r.workPlace,
-                                    remark: e.target.value,
-                                  },
-                                }))
-                              }
+                              onChange={(e) => handleEditChange(r.id, "remark", e.target.value, r)}
                               className="w-full min-w-36 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-white/15 dark:bg-zinc-950"
                             />
                           ) : (
@@ -896,6 +984,60 @@ export function WorkingHoursMonthPanel({
           </div>
         </div>
       ) : null}
+
+      {/* Global Progress Modal */}
+      {downloading && mounted && typeof document !== "undefined" && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-zinc-200/20 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900">
+            <div className="p-6">
+              <div className="mb-4 flex items-center gap-4">
+                <div className="relative flex size-12 shrink-0 items-center justify-center">
+                  <div className="absolute inset-0 rounded-full border-2 border-cyan-500/20" />
+                  <div className="absolute inset-0 rounded-full border-2 border-t-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.5)] animate-spin" />
+                  <Loader2 className="size-5 text-cyan-500 animate-spin" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-zinc-900 dark:text-white">
+                    {downloadStatus || "Processing..."}
+                  </h3>
+                </div>
+              </div>
+
+              {downloadTotalCount > 0 && (
+                <div className="space-y-2 mt-6">
+                  <div className="flex justify-between text-xs font-mono text-zinc-500 font-semibold">
+                    <span>Progress</span>
+                    <span>{downloadDoneCount} / {downloadTotalCount}</span>
+                  </div>
+                  <div className="relative h-4 w-full overflow-hidden rounded-full bg-zinc-100 shadow-inner dark:bg-zinc-800">
+                    <div
+                      className="absolute inset-y-0 left-0 bg-gradient-to-r from-cyan-400 to-blue-600 shadow-[0_0_10px_rgba(6,182,212,0.8)] transition-all duration-300 ease-out"
+                      style={{
+                        width: downloadTotalCount > 0
+                          ? `${Math.min(100, (downloadDoneCount / downloadTotalCount) * 100)}%`
+                          : "0%"
+                      }}
+                    >
+                      <div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,0.2)_25%,transparent_25%,transparent_50%,rgba(255,255,255,0.2)_50%,rgba(255,255,255,0.2)_75%,transparent_75%,transparent)] bg-[length:1rem_1rem] animate-[spin_2s_linear_infinite]" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-8 flex justify-end">
+                <Button 
+                  variant="outline" 
+                  onClick={cancelDownload}
+                  className="rounded-xl border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10 font-semibold"
+                >
+                  Cancel Process
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

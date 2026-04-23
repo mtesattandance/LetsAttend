@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import JSZip from "jszip";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -370,6 +371,7 @@ export default function AdminReportsPage() {
                 })()
               : []),
           ],
+          showFoot: "lastPage",
           styles: { fontSize: 8, cellPadding: 5.5 },
           headStyles: { fillColor: [24, 24, 27], textColor: [255, 255, 255], fontSize: 8, cellPadding: 5.5 },
           footStyles: { fillColor: [245, 245, 245], textColor: [20, 20, 20], fontSize: 8, cellPadding: 5.5 },
@@ -454,7 +456,7 @@ export default function AdminReportsPage() {
       const targets = targetType === "all" ? users : users.filter(u => u.id === selectedWorkerId);
       
       if (targets.length === 0) throw new Error("No target employees found");
-      setDownloadTotalCount(targets.length);
+      setDownloadTotalCount(targets.length * months.length);
 
       if (targetType === "individual") {
         setDownloadStatus(`Gathering ${months.length} month(s) of data...`);
@@ -462,6 +464,7 @@ export default function AdminReportsPage() {
         setDownloadCurrentDetail(emp.name || "Employee");
         
         const monthRows: HoursPayload[] = [];
+        let doneForTarget = 0;
         for (const m of months) {
           if (cancelDownloadRef.current) throw new Error("Download cancelled");
           const q = new URLSearchParams({ month: m, workerId: emp.id });
@@ -475,6 +478,8 @@ export default function AdminReportsPage() {
           const json = (await res.json()) as HoursPayload & { error?: string };
           if (!res.ok) throw new Error(json.error ?? `Failed to load ${m} for ${emp.name}`);
           monthRows.push(json);
+          doneForTarget++;
+          setDownloadDoneCount(doneForTarget);
         }
         
         setDownloadStatus("Generating PDF...");
@@ -492,9 +497,9 @@ export default function AdminReportsPage() {
         a.remove();
         URL.revokeObjectURL(url);
         toast.success(`PDF downloaded for ${emp.name}`);
-        setDownloadDoneCount(1);
       } else {
         const zip = new JSZip();
+        let totalDone = 0;
         for (let idx = 0; idx < targets.length; idx++) {
           if (cancelDownloadRef.current) throw new Error("Download cancelled");
           const emp = targets[idx]!;
@@ -518,12 +523,13 @@ export default function AdminReportsPage() {
             const json = (await res.json()) as HoursPayload & { error?: string };
             if (!res.ok) throw new Error(json.error ?? `Failed to load ${m} for ${emp.name}`);
             monthRows.push(json);
+            totalDone++;
+            setDownloadDoneCount(totalDone);
           }
           if (cancelDownloadRef.current) throw new Error("Download cancelled");
           const empRates = await fetchWageRates(emp.id, token);
           const pdf = await buildPdfBytes(monthRows, periodTitle, empRates.wageRate, empRates.overtimeRate);
           folder.file(`working-hours-${suffix}.pdf`, pdf);
-          setDownloadDoneCount(idx + 1);
         }
 
         if (cancelDownloadRef.current) throw new Error("Download cancelled");
@@ -609,6 +615,7 @@ export default function AdminReportsPage() {
   // ── Sites: fetch headcount ───────────────────────────────────────────────
   const fetchSiteData = React.useCallback(async () => {
     if (!selectedSiteId) { toast.error("Please select a site first"); return; }
+    cancelDownloadRef.current = false;
     setSiteLoading(true);
     setSiteData(null);
     try {
@@ -620,16 +627,29 @@ export default function AdminReportsPage() {
       if (sitePeriodMode === "year") value = String(sitePeriodYear);
       if (sitePeriodMode === "day") value = sitePeriodDay;
       const q = new URLSearchParams({ siteId: selectedSiteId, period: sitePeriodMode, value });
+      
+      const controller = new AbortController();
+      activeFetchControllerRef.current = controller;
+      
       const res = await fetch(`/api/admin/site-attendance?${q.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
       });
+      
+      activeFetchControllerRef.current = null;
+      if (cancelDownloadRef.current) throw new Error("Fetch cancelled");
+      
       const json = (await res.json()) as SiteAttendanceResponse & { error?: string };
       if (!res.ok) throw new Error(json.error ?? "Failed to load site data");
       setSiteData(json);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to load site data");
+      const msg = e instanceof Error ? e.message : "Failed to load site data";
+      if (/cancelled|abort/i.test(msg)) toast.message("Fetch cancelled.");
+      else toast.error(msg);
     } finally {
       setSiteLoading(false);
+      activeFetchControllerRef.current = null;
+      cancelDownloadRef.current = false;
     }
   }, [selectedSiteId, sitePeriodMode, sitePeriodValue, sitePeriodYear, sitePeriodDay]);
 
@@ -959,7 +979,7 @@ export default function AdminReportsPage() {
 
         {/* Execution & Processing HUD */}
         <div className="rounded-3xl border border-zinc-200 bg-white/90 shadow-2xl shadow-cyan-500/10 p-2 backdrop-blur-2xl dark:border-white/10 dark:bg-zinc-900/90 dark:shadow-cyan-500/5">
-          {!downloading ? (
+          {!downloading && (
             <div className="flex flex-col items-center justify-between gap-4 p-4 sm:flex-row sm:px-6">
               <div className="flex items-center gap-3 self-start sm:self-auto">
                 <div className={`flex size-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-600 shadow-[inset_0_0_10px_rgba(6,182,212,0.3)] dark:bg-cyan-500/20 dark:text-cyan-400 ${loading ? 'animate-pulse' : ''}`}>
@@ -1002,55 +1022,6 @@ export default function AdminReportsPage() {
                     </>
                   )}
                 </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="p-6">
-              <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="relative flex size-10 items-center justify-center">
-                    <div className="absolute inset-0 rounded-full border-2 border-cyan-500/20" />
-                    <div className="absolute inset-0 rounded-full border-2 border-t-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.5)] animate-spin" />
-                    <Zap className="size-4 text-cyan-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-zinc-900 dark:text-white animate-pulse">
-                      {downloadStatus}
-                    </p>
-                    {downloadCurrentDetail && (
-                      <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400">
-                        {'>'} Working on <span className="text-cyan-600 dark:text-cyan-400 font-bold">{downloadCurrentDetail}</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={cancelDownload}
-                  className="rounded-lg border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10 h-9 transition-colors"
-                >
-                  Cancel
-                </Button>
-              </div>
-              
-              <div className="space-y-2">
-                <div className="flex justify-between text-xs font-mono text-zinc-500">
-                  <span>Export Progress: {targetType === 'all' ? 'All' : 'Single'}</span>
-                  <span>{downloadDoneCount} / {Math.max(1, downloadTotalCount)} done</span>
-                </div>
-                <div className="relative h-3 w-full overflow-hidden rounded-full bg-zinc-100 shadow-inner dark:bg-zinc-800">
-                  <div
-                    className="absolute inset-y-0 left-0 bg-gradient-to-r from-cyan-400 to-blue-600 shadow-[0_0_10px_rgba(6,182,212,0.8)] transition-all duration-300 ease-out"
-                    style={{
-                      width: downloadTotalCount > 0
-                        ? `${Math.min(100, (downloadDoneCount / downloadTotalCount) * 100)}%`
-                        : "0%"
-                    }}
-                  >
-                    <div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,0.2)_25%,transparent_25%,transparent_50%,rgba(255,255,255,0.2)_50%,rgba(255,255,255,0.2)_75%,transparent_75%,transparent)] bg-[length:1rem_1rem] animate-[spin_2s_linear_infinite]" />
-                  </div>
-                </div>
               </div>
             </div>
           )}
@@ -1416,8 +1387,67 @@ export default function AdminReportsPage() {
             )}
           </div>
         )}
-
       </div>
+
+      {/* Global Progress Modal */}
+      {(downloading || siteLoading || siteDownloading) && mounted && typeof document !== "undefined" && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-zinc-200/20 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900">
+            <div className="p-6">
+              <div className="mb-4 flex items-center gap-4">
+                <div className="relative flex size-12 shrink-0 items-center justify-center">
+                  <div className="absolute inset-0 rounded-full border-2 border-cyan-500/20" />
+                  <div className="absolute inset-0 rounded-full border-2 border-t-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.5)] animate-spin" />
+                  <Loader2 className="size-5 text-cyan-500 animate-spin" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-zinc-900 dark:text-white">
+                    {downloadStatus || (siteLoading ? "Fetching site data..." : siteDownloading ? "Generating PDF..." : "Processing...")}
+                  </h3>
+                  {downloadCurrentDetail && (
+                    <p className="text-sm font-medium text-cyan-600 dark:text-cyan-400">
+                      {downloadCurrentDetail}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {downloading && downloadTotalCount > 0 && (
+                <div className="space-y-2 mt-6">
+                  <div className="flex justify-between text-xs font-mono text-zinc-500 font-semibold">
+                    <span>Progress</span>
+                    <span>{downloadDoneCount} / {downloadTotalCount}</span>
+                  </div>
+                  <div className="relative h-4 w-full overflow-hidden rounded-full bg-zinc-100 shadow-inner dark:bg-zinc-800">
+                    <div
+                      className="absolute inset-y-0 left-0 bg-gradient-to-r from-cyan-400 to-blue-600 shadow-[0_0_10px_rgba(6,182,212,0.8)] transition-all duration-300 ease-out"
+                      style={{
+                        width: downloadTotalCount > 0
+                          ? `${Math.min(100, (downloadDoneCount / downloadTotalCount) * 100)}%`
+                          : "0%"
+                      }}
+                    >
+                      <div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,0.2)_25%,transparent_25%,transparent_50%,rgba(255,255,255,0.2)_50%,rgba(255,255,255,0.2)_75%,transparent_75%,transparent)] bg-[length:1rem_1rem] animate-[spin_2s_linear_infinite]" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-8 flex justify-end">
+                <Button 
+                  variant="outline" 
+                  onClick={cancelDownload}
+                  className="rounded-xl border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10 font-semibold"
+                >
+                  Cancel Process
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
     </div>
   );
 }
