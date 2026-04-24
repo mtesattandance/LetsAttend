@@ -21,6 +21,12 @@ export type DashboardUser = {
   assignedSites: string[];
   /** IANA timezone for attendance calendar days (falls back if unset). */
   timeZone: string;
+  /** Whether the user has access to view their salary sheet */
+  salarySheetAccess?: boolean;
+  /** Hourly wage rate */
+  wageRate?: number;
+  /** Hourly overtime rate */
+  overtimeRate?: number;
 };
 
 const SUPER_ADMIN_EMAIL = process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL;
@@ -80,6 +86,10 @@ export function DashboardUserProvider({ children }: { children: React.ReactNode 
             rawWs === "pending" || rawWs === "approved" || rawWs === "rejected"
               ? rawWs
               : undefined;
+          
+          const salarySheetAccess = data?.salarySheetAccess === true;
+          const wageRate = typeof data?.wageRate === "number" ? data.wageRate : undefined;
+          const overtimeRate = typeof data?.overtimeRate === "number" ? data.overtimeRate : undefined;
 
           if (email && snap.exists() && fsEmail !== email) {
             try {
@@ -99,6 +109,9 @@ export function DashboardUserProvider({ children }: { children: React.ReactNode 
             workspaceAccessStatus,
             assignedSites,
             timeZone,
+            salarySheetAccess,
+            wageRate,
+            overtimeRate,
           });
           setLoading(false);
         },
@@ -118,6 +131,9 @@ export function DashboardUserProvider({ children }: { children: React.ReactNode 
                   workspaceAccessStatus: undefined,
                   assignedSites: [],
                   timeZone: normalizeTimeZoneId(undefined),
+                  salarySheetAccess: false,
+                  wageRate: undefined,
+                  overtimeRate: undefined,
                 }
           );
           setLoading(false);

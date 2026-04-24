@@ -216,9 +216,16 @@ export default function AdminSalaryEditPage() {
   // ─── OT toggle ────────────────────────────────────────────────────────────
   const handleOtTypeChange = (userId: string, ot: OvertimeType) => {
     setWages((p) => ({ ...p, [userId]: { ...p[userId]!, overtimeType: ot, saved: false } }));
+    const entry = wages[userId];
+    if (!entry || entry.wagesPerDay.trim() === "") return;
+    
     if (ot !== "custom") {
-      const entry = wages[userId];
-      if (entry && entry.wagesPerDay.trim() !== "") void saveFor(userId, { overtimeType: ot });
+      void saveFor(userId, { overtimeType: ot });
+    } else {
+      const customVal = Number(entry.customOvertime);
+      if (entry.customOvertime.trim() !== "" && Number.isFinite(customVal) && customVal >= 0) {
+        void saveFor(userId, { overtimeType: ot });
+      }
     }
   };
 

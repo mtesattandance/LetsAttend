@@ -86,6 +86,23 @@ export function WorkingHoursMonthPanel({
   const { user: viewer } = useDashboardUser();
   const canEdit = viewer?.role === "admin" || viewer?.role === "super_admin";
 
+  const isEmployeeSelf = !workerId;
+  const effectiveSalaryAccess =
+    viewer?.role === "admin" || viewer?.role === "super_admin"
+      ? true
+      : isEmployeeSelf
+      ? viewer?.salarySheetAccess
+      : false;
+  const effectiveWageRate = wageRate ?? (isEmployeeSelf && effectiveSalaryAccess ? viewer?.wageRate : undefined);
+  const effectiveOvertimeRate = overtimeRate ?? (isEmployeeSelf && effectiveSalaryAccess ? viewer?.overtimeRate : undefined);
+
+  let otTypeStr = "Same";
+  if (typeof effectiveWageRate === "number" && typeof effectiveOvertimeRate === "number") {
+    const ratio = effectiveOvertimeRate / effectiveWageRate;
+    if (Math.abs(ratio - 1.5) < 0.01) otTypeStr = "1.5x";
+    else if (Math.abs(ratio - 1.0) >= 0.01) otTypeStr = "Custom";
+  }
+
   const [data, setData] = React.useState<Payload | null>(null);
   const zone = React.useMemo(() => {
     if (data?.zone) return data.zone;
@@ -478,13 +495,13 @@ export function WorkingHoursMonthPanel({
     if (!data) return;
     setDownloading(true);
     try {
-      await renderPdf([data], titleMonth, month, wageRate, overtimeRate);
+      await renderPdf([data], titleMonth, month, effectiveWageRate, effectiveOvertimeRate);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to download PDF");
     } finally {
       setDownloading(false);
     }
-  }, [data, month, renderPdf, titleMonth, wageRate, overtimeRate]);
+  }, [data, month, renderPdf, titleMonth, effectiveWageRate, effectiveOvertimeRate]);
 
   const downloadYearPdf = React.useCallback(async () => {
     cancelDownloadRef.current = false;
@@ -525,7 +542,7 @@ export function WorkingHoursMonthPanel({
       }
       
       setDownloadStatus("Generating PDF...");
-      await renderPdf(list, `${year}`, `${year}`, wageRate, overtimeRate);
+      await renderPdf(list, `${year}`, `${year}`, effectiveWageRate, effectiveOvertimeRate);
       toast.success("PDF downloaded!");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to download PDF";
@@ -535,7 +552,7 @@ export function WorkingHoursMonthPanel({
       setDownloading(false);
       activeFetchControllerRef.current = null;
     }
-  }, [renderPdf, workerId, year, zone, wageRate, overtimeRate, mode]);
+  }, [renderPdf, workerId, year, zone, effectiveWageRate, effectiveOvertimeRate, mode]);
 
   const downloadPeriodPdf = React.useCallback(async () => {
     cancelDownloadRef.current = false;
@@ -599,7 +616,7 @@ export function WorkingHoursMonthPanel({
         periodMode === "year"
           ? `${periodYear}`
           : `${periodStartMonth}-${periodEndMonth}`;
-      await renderPdf(list, title, suffix, wageRate, overtimeRate);
+      await renderPdf(list, title, suffix, effectiveWageRate, effectiveOvertimeRate);
       setPeriodOpen(false);
       toast.success("PDF downloaded!");
     } catch (e) {
@@ -610,7 +627,7 @@ export function WorkingHoursMonthPanel({
       setDownloading(false);
       activeFetchControllerRef.current = null;
     }
-  }, [mode, periodEndMonth, periodMode, periodStartMonth, periodYear, renderPdf, workerId, zone, wageRate, overtimeRate]);
+  }, [mode, periodEndMonth, periodMode, periodStartMonth, periodYear, renderPdf, workerId, zone, effectiveWageRate, effectiveOvertimeRate]);
 
   return (
     <div className="space-y-6">
@@ -624,6 +641,31 @@ export function WorkingHoursMonthPanel({
         {loading && data ? (
           <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">Updating…</p>
         ) : null}
+
+        {effectiveSalaryAccess && typeof effectiveWageRate === "number" ? (
+          <div className="mt-4 flex flex-wrap items-center gap-4 rounded-xl border border-emerald-200/50 bg-emerald-50/50 px-4 py-3 text-sm dark:border-emerald-500/10 dark:bg-emerald-500/5">
+            <div>
+              <span className="block text-[10px] uppercase tracking-wider text-zinc-500">Wages/Day(रू)</span>
+              <span className="font-medium text-emerald-700 dark:text-emerald-400">{(effectiveWageRate * 8).toFixed(2)}</span>
+            </div>
+            <div className="h-8 w-px bg-emerald-200/50 dark:bg-emerald-500/10" />
+            <div>
+              <span className="block text-[10px] uppercase tracking-wider text-zinc-500">Wages/hr(रू)</span>
+              <span className="font-medium text-emerald-700 dark:text-emerald-400">{effectiveWageRate.toFixed(2)}</span>
+            </div>
+            <div className="h-8 w-px bg-emerald-200/50 dark:bg-emerald-500/10" />
+            <div>
+              <span className="block text-[10px] uppercase tracking-wider text-zinc-500">OT Type</span>
+              <span className="font-medium text-emerald-700 dark:text-emerald-400">{otTypeStr}</span>
+            </div>
+            <div className="h-8 w-px bg-emerald-200/50 dark:bg-emerald-500/10" />
+            <div>
+              <span className="block text-[10px] uppercase tracking-wider text-zinc-500">OT Rate(रू/hr)</span>
+              <span className="font-medium text-emerald-700 dark:text-emerald-400">{(effectiveOvertimeRate ?? effectiveWageRate).toFixed(2)}</span>
+            </div>
+          </div>
+        ) : null}
+
         <div className="mt-3 flex flex-wrap items-end justify-end gap-2">
           <label className="text-xs text-zinc-500">
             Yearly PDF
@@ -754,9 +796,9 @@ export function WorkingHoursMonthPanel({
           ) : null}
           <div className={cn(loading && "select-none blur-[1px]")}>
 
-          {(typeof wageRate === "number" || typeof overtimeRate === "number") && data && (() => {
-            const rRate = wageRate ?? 0;
-            const oRate = overtimeRate ?? 0;
+          {(typeof effectiveWageRate === "number" || typeof effectiveOvertimeRate === "number") && data && (() => {
+            const rRate = effectiveWageRate ?? 0;
+            const oRate = effectiveOvertimeRate ?? 0;
             const regularWage = data.regularHoursUpToCap * rRate;
             const overtimeWage = data.hoursOverCapAsOvertime * oRate;
             const totalWage = regularWage + overtimeWage;

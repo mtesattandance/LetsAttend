@@ -16,7 +16,7 @@ export async function GET(req: Request) {
   if (!workerId) return jsonError("workerId required", 400);
 
   const db = adminDb();
-  const snap = await db.collection("workers").doc(workerId).get();
+  const snap = await db.collection("users").doc(workerId).get();
   const data = snap.data() ?? {};
   return NextResponse.json({ salarySheetAccess: data.salarySheetAccess === true });
 }
@@ -34,7 +34,7 @@ export async function PATCH(req: Request) {
 
   const db = adminDb();
   await db
-    .collection("workers")
+    .collection("users")
     .doc(body.workerId)
     .set({ salarySheetAccess: body.salarySheetAccess }, { merge: true });
 
