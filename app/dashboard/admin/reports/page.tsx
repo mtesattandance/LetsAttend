@@ -19,7 +19,7 @@ import { useCalendarMode } from "@/components/client/calendar-mode-context";
 import { monthLabelForModeYm, formatIsoForCalendar, bsIsoToAdIso, adIsoToBsIso, currentMonthYyyyMmForMode, convertMonthMode } from "@/lib/date/bs-calendar";
 import { DEFAULT_ATTENDANCE_TIME_ZONE } from "@/lib/date/time-zone";
 import { toast } from "sonner";
-import { FileArchive, Loader2, Sparkles, User, Users, CalendarDays, CalendarRange, ChevronRight, Activity, ArrowDownToLine, Zap, MapPin, Building2, Table2 } from "lucide-react";
+import { FileArchive, Loader2, Sparkles, User, Users, CalendarDays, CalendarRange, ChevronRight, Activity, ArrowDownToLine, Zap, MapPin, Building2, Table2, HardDrive, Trash2 } from "lucide-react";
 import { DateField } from "@/components/ui/date-field";
 
 type UserRow = {
@@ -80,7 +80,7 @@ function kindLabel(kind: HoursPayload["entries"][number]["kind"]): string {
 
 export default function AdminReportsPage() {
   // ── Tab ──────────────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = React.useState<"employee" | "site">("employee");
+  const [activeTab, setActiveTab] = React.useState<"employee" | "site" | "storage">("employee");
 
   // ── Employee reports state ───────────────────────────────────────────────
   const [users, setUsers] = React.useState<UserRow[]>([]);
@@ -136,6 +136,22 @@ export default function AdminReportsPage() {
   const [siteData, setSiteData] = React.useState<SiteAttendanceResponse | null>(null);
   const [siteLoading, setSiteLoading] = React.useState(false);
   const [siteDownloading, setSiteDownloading] = React.useState(false);
+
+  // ── Storage management state ──────────────────────────────────────────────
+  const [storageFromMonth, setStorageFromMonth] = React.useState(() =>
+    currentMonthYyyyMmForMode("ad", DEFAULT_ATTENDANCE_TIME_ZONE)
+  );
+  const [storageToMonth, setStorageToMonth] = React.useState(() =>
+    currentMonthYyyyMmForMode("ad", DEFAULT_ATTENDANCE_TIME_ZONE)
+  );
+  const [storageLoading, setStorageLoading] = React.useState(false);
+  const [storageDeleting, setStorageDeleting] = React.useState(false);
+  const [storagePreview, setStoragePreview] = React.useState<{
+    scannedCount: number;
+    deleteCandidateCount: number;
+    sample: { pathname: string; uploadedAtIso: string }[];
+    truncated?: boolean;
+  } | null>(null);
   
   const cancelDownloadRef = React.useRef(false);
   const activeFetchControllerRef = React.useRef<AbortController | null>(null);
@@ -721,6 +737,68 @@ export default function AdminReportsPage() {
     }
   }, [siteData, fetchLogoDataUrl, mode]);
 
+  const previewStorageDeletion = React.useCallback(async () => {
+    setStorageLoading(true);
+    try {
+      const auth = getFirebaseAuth();
+      const u = auth.currentUser;
+      if (!u) throw new Error("Not signed in");
+      const token = await u.getIdToken();
+      const q = new URLSearchParams({ fromMonth: storageFromMonth, toMonth: storageToMonth });
+      const res = await fetch(`/api/admin/storage/photos?${q.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        scannedCount?: number;
+        deleteCandidateCount?: number;
+        sample?: { pathname: string; uploadedAtIso: string }[];
+        truncated?: boolean;
+      };
+      if (!res.ok) throw new Error(json.error ?? "Failed to preview storage cleanup");
+      setStoragePreview({
+        scannedCount: json.scannedCount ?? 0,
+        deleteCandidateCount: json.deleteCandidateCount ?? 0,
+        sample: json.sample ?? [],
+        truncated: json.truncated,
+      });
+      toast.success("Storage preview loaded");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to preview storage cleanup");
+    } finally {
+      setStorageLoading(false);
+    }
+  }, [storageFromMonth, storageToMonth]);
+
+  const deleteStoragePhotos = React.useCallback(async () => {
+    setStorageDeleting(true);
+    try {
+      const auth = getFirebaseAuth();
+      const u = auth.currentUser;
+      if (!u) throw new Error("Not signed in");
+      const token = await u.getIdToken();
+      const res = await fetch("/api/admin/storage/photos", {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ fromMonth: storageFromMonth, toMonth: storageToMonth }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        deletedCount?: number;
+      };
+      if (!res.ok) throw new Error(json.error ?? "Failed to delete storage photos");
+      toast.success(`Deleted ${json.deletedCount ?? 0} photo(s)`);
+      setStoragePreview(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete storage photos");
+    } finally {
+      setStorageDeleting(false);
+    }
+  }, [storageFromMonth, storageToMonth]);
+
   return (
     <div className="relative min-h-full bg-zinc-50 p-4 sm:p-6 md:p-10 dark:bg-zinc-950 overflow-hidden">
       {/* Background SVG Grid Pattern */}
@@ -797,6 +875,16 @@ export default function AdminReportsPage() {
             }`}
           >
             <Building2 className="size-4" /> Site Reports
+          </button>
+          <button
+            onClick={() => setActiveTab("storage")}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold transition-all ${
+              activeTab === "storage"
+                ? "bg-white text-zinc-900 shadow-md dark:bg-zinc-700 dark:text-white"
+                : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
+            }`}
+          >
+            <HardDrive className="size-4" /> Storage
           </button>
         </div>
 
@@ -1384,6 +1472,105 @@ export default function AdminReportsPage() {
                 <Building2 className="mx-auto mb-3 size-10 opacity-30" />
                 <p className="text-sm font-medium">No attendance records found for this site in the selected period.</p>
               </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "storage" && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <Card className="border-zinc-200 bg-white/80 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/80">
+              <CardHeader className="bg-zinc-50/50 dark:bg-white/5 border-b border-zinc-100 dark:border-white/10">
+                <CardTitle className="text-sm font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 flex items-center gap-2">
+                  <HardDrive className="size-4" /> Manual Photo Cleanup
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-6">
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                  Select month range and manually delete uploaded selfies from Blob storage.
+                </p>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-zinc-500">
+                      From month
+                    </label>
+                    <SearchableSelect
+                      value={storageFromMonth}
+                      onValueChange={setStorageFromMonth}
+                      includeEmpty={false}
+                      options={monthOptions}
+                      searchPlaceholder="Select month..."
+                      triggerClassName="h-11 w-full rounded-xl border-zinc-200 bg-white/50 backdrop-blur-md px-4 text-sm font-medium shadow-sm dark:border-white/10 dark:bg-zinc-900/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-zinc-500">
+                      To month
+                    </label>
+                    <SearchableSelect
+                      value={storageToMonth}
+                      onValueChange={setStorageToMonth}
+                      includeEmpty={false}
+                      options={monthOptions}
+                      searchPlaceholder="Select month..."
+                      triggerClassName="h-11 w-full rounded-xl border-zinc-200 bg-white/50 backdrop-blur-md px-4 text-sm font-medium shadow-sm dark:border-white/10 dark:bg-zinc-900/50"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    onClick={previewStorageDeletion}
+                    disabled={storageLoading || storageDeleting}
+                    className="rounded-xl gap-2"
+                  >
+                    {storageLoading ? <Loader2 className="size-4 animate-spin" /> : <Activity className="size-4" />}
+                    Preview candidates
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={deleteStoragePhotos}
+                    disabled={storageDeleting || storageLoading}
+                    className="rounded-xl gap-2"
+                  >
+                    {storageDeleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                    Delete in selected range
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {storagePreview && (
+              <Card className="border-zinc-200 bg-white/80 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/80">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Preview result
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                    Scanned: <span className="font-semibold">{storagePreview.scannedCount}</span> · Candidates:{" "}
+                    <span className="font-semibold">{storagePreview.deleteCandidateCount}</span>
+                    {storagePreview.truncated ? " (truncated to limit)" : ""}
+                  </p>
+                  <div className="max-h-72 overflow-auto rounded-lg border border-zinc-200 dark:border-white/10">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-zinc-50 dark:bg-white/[0.03]">
+                          <th className="px-3 py-2 text-left font-semibold">Path</th>
+                          <th className="px-3 py-2 text-left font-semibold">Uploaded at</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {storagePreview.sample.map((s) => (
+                          <tr key={`${s.pathname}-${s.uploadedAtIso}`} className="border-t border-zinc-100 dark:border-white/5">
+                            <td className="px-3 py-2 font-mono">{s.pathname}</td>
+                            <td className="px-3 py-2">{s.uploadedAtIso}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
             )}
           </div>
         )}

@@ -37,7 +37,15 @@ export async function GET(req: Request) {
   const snap = await db.collection("users").get();
   const byId = new Map<
     string,
-    { id: string; name: string; email: string; role: string }
+    {
+      id: string;
+      name: string;
+      email: string;
+      role: string;
+      signatureDataUrl?: string;
+      defaultSignatureId?: string;
+      signatureOptions?: Array<{ id: string; label: string; dataUrl: string; createdAt: string }>;
+    }
   >();
 
   for (const d of snap.docs) {
@@ -49,6 +57,20 @@ export async function GET(req: Request) {
       name: typeof data.name === "string" ? data.name : "",
       email: typeof data.email === "string" ? data.email : "",
       role: nr === "super_admin" || nr === "superadmin" ? "super_admin" : "admin",
+      signatureDataUrl:
+        typeof data.signatureDataUrl === "string" ? data.signatureDataUrl : undefined,
+      defaultSignatureId:
+        typeof data.defaultSignatureId === "string" ? data.defaultSignatureId : undefined,
+      signatureOptions: Array.isArray(data.signatureOptions)
+        ? (data.signatureOptions as Array<{ id: string; label: string; dataUrl: string; createdAt: string }>)
+            .filter((s) => typeof s?.id === "string" && typeof s?.dataUrl === "string")
+            .map((s) => ({
+              id: String(s.id),
+              label: typeof s.label === "string" ? s.label : "Signature",
+              dataUrl: String(s.dataUrl),
+              createdAt: typeof s.createdAt === "string" ? s.createdAt : "",
+            }))
+        : undefined,
     });
   }
 

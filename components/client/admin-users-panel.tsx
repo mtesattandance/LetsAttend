@@ -714,6 +714,10 @@ export function AdminUsersPanel() {
                             >
                               Remove admin
                             </Button>
+                          ) : r.role === "super_admin" ? (
+                            <span className="text-xs font-medium text-cyan-400">
+                              Super admin
+                            </span>
                           ) : (
                             <span className="text-zinc-600">—</span>
                           )}

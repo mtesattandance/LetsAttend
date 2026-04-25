@@ -45,7 +45,20 @@ type Entry = {
   remark: string;
 };
 
-type AdminUser = { id: string; name?: string; email?: string };
+type SignatureOption = {
+  id: string;
+  label: string;
+  dataUrl: string;
+  createdAt: string;
+};
+type AdminUser = {
+  id: string;
+  name?: string;
+  email?: string;
+  signatureDataUrl?: string;
+  defaultSignatureId?: string;
+  signatureOptions?: SignatureOption[];
+};
 
 type HoursPayload = {
   month: string;
@@ -143,12 +156,16 @@ export function AdminSalarySheet({
   const [customOvertimeRate, setCustomOvertimeRate] = React.useState("");
   const [otSaving, setOtSaving] = React.useState(false);
 
-  const [checkedByName, setCheckedByName] = React.useState("");
-  const [verifiedByName, setVerifiedByName] = React.useState("");
-  const [approvedByName, setApprovedByName] = React.useState("");
+  const [checkedById, setCheckedById] = React.useState("");
+  const [verifiedById, setVerifiedById] = React.useState("");
+  const [approvedById, setApprovedById] = React.useState("");
+  const [checkedSignatureId, setCheckedSignatureId] = React.useState("");
+  const [verifiedSignatureId, setVerifiedSignatureId] = React.useState("");
+  const [approvedSignatureId, setApprovedSignatureId] = React.useState("");
   const [checkedSigB64, setCheckedSigB64] = React.useState<string | null>(null);
   const [verifiedSigB64, setVerifiedSigB64] = React.useState<string | null>(null);
   const [approvedSigB64, setApprovedSigB64] = React.useState<string | null>(null);
+  const [sigSavingRole, setSigSavingRole] = React.useState<"checked" | "verified" | "approved" | null>(null);
   const [admins, setAdmins] = React.useState<AdminUser[]>([]);
 
   const loadAdmins = React.useCallback(async () => {
@@ -169,43 +186,241 @@ export function AdminSalarySheet({
     void loadAdmins();
   }, [loadAdmins]);
 
-  const createUploadHandler = React.useCallback((setter: (val: string | null) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) {
-      setter(null);
+  const compressSignatureFile = React.useCallback((file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        const img = new Image();
+        img.onload = () => {
+          const MAX_WIDTH = 400;
+          const MAX_HEIGHT = 200;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > MAX_WIDTH || height > MAX_HEIGHT) {
+            const ratio = Math.min(MAX_WIDTH / width, MAX_HEIGHT / height);
+            width = Math.round(width * ratio);
+            height = Math.round(height * ratio);
+          }
+
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL("image/png"));
+          } else {
+            resolve(dataUrl);
+          }
+        };
+        img.onerror = () => reject(new Error("Invalid image file"));
+        img.src = dataUrl;
+      };
+      reader.onerror = () => reject(new Error("Failed to read image file"));
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const adminLabelById = React.useMemo(() => {
+    const out = new Map<string, string>();
+    for (const a of admins) out.set(a.id, a.name || a.email || "Admin");
+    return out;
+  }, [admins]);
+
+  const adminSigById = React.useMemo(() => {
+    const out = new Map<string, string>();
+    for (const a of admins) {
+      if (typeof a.signatureDataUrl === "string" && a.signatureDataUrl.startsWith("data:image/")) {
+        out.set(a.id, a.signatureDataUrl);
+      }
+    }
+    return out;
+  }, [admins]);
+
+  const adminById = React.useMemo(() => {
+    const out = new Map<string, AdminUser>();
+    for (const a of admins) out.set(a.id, a);
+    return out;
+  }, [admins]);
+
+  const signaturesForAdmin = React.useCallback((adminId: string): SignatureOption[] => {
+    const admin = adminById.get(adminId);
+    const opts = Array.isArray(admin?.signatureOptions) ? admin.signatureOptions : [];
+    return opts.filter((s) => typeof s.id === "string" && typeof s.dataUrl === "string");
+  }, [adminById]);
+
+  React.useEffect(() => {
+    if (!checkedById) {
+      setCheckedSignatureId("");
+      setCheckedSigB64(null);
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      const img = new Image();
-      img.onload = () => {
-        const MAX_WIDTH = 400;
-        const MAX_HEIGHT = 200;
-        let width = img.width;
-        let height = img.height;
+    const admin = adminById.get(checkedById);
+    const options = signaturesForAdmin(checkedById);
+    const defaultId =
+      admin?.defaultSignatureId && options.some((s) => s.id === admin.defaultSignatureId)
+        ? admin.defaultSignatureId
+        : options[0]?.id ?? "";
+    setCheckedSignatureId(defaultId);
+    const chosen = options.find((s) => s.id === defaultId);
+    setCheckedSigB64(chosen?.dataUrl ?? adminSigById.get(checkedById) ?? null);
+  }, [checkedById, adminById, signaturesForAdmin, adminSigById]);
+  React.useEffect(() => {
+    if (!verifiedById) {
+      setVerifiedSignatureId("");
+      setVerifiedSigB64(null);
+      return;
+    }
+    const admin = adminById.get(verifiedById);
+    const options = signaturesForAdmin(verifiedById);
+    const defaultId =
+      admin?.defaultSignatureId && options.some((s) => s.id === admin.defaultSignatureId)
+        ? admin.defaultSignatureId
+        : options[0]?.id ?? "";
+    setVerifiedSignatureId(defaultId);
+    const chosen = options.find((s) => s.id === defaultId);
+    setVerifiedSigB64(chosen?.dataUrl ?? adminSigById.get(verifiedById) ?? null);
+  }, [verifiedById, adminById, signaturesForAdmin, adminSigById]);
+  React.useEffect(() => {
+    if (!approvedById) {
+      setApprovedSignatureId("");
+      setApprovedSigB64(null);
+      return;
+    }
+    const admin = adminById.get(approvedById);
+    const options = signaturesForAdmin(approvedById);
+    const defaultId =
+      admin?.defaultSignatureId && options.some((s) => s.id === admin.defaultSignatureId)
+        ? admin.defaultSignatureId
+        : options[0]?.id ?? "";
+    setApprovedSignatureId(defaultId);
+    const chosen = options.find((s) => s.id === defaultId);
+    setApprovedSigB64(chosen?.dataUrl ?? adminSigById.get(approvedById) ?? null);
+  }, [approvedById, adminById, signaturesForAdmin, adminSigById]);
+  React.useEffect(() => {
+    if (!checkedById || !checkedSignatureId) return;
+    const chosen = signaturesForAdmin(checkedById).find((s) => s.id === checkedSignatureId);
+    if (chosen) setCheckedSigB64(chosen.dataUrl);
+  }, [checkedById, checkedSignatureId, signaturesForAdmin]);
+  React.useEffect(() => {
+    if (!verifiedById || !verifiedSignatureId) return;
+    const chosen = signaturesForAdmin(verifiedById).find((s) => s.id === verifiedSignatureId);
+    if (chosen) setVerifiedSigB64(chosen.dataUrl);
+  }, [verifiedById, verifiedSignatureId, signaturesForAdmin]);
+  React.useEffect(() => {
+    if (!approvedById || !approvedSignatureId) return;
+    const chosen = signaturesForAdmin(approvedById).find((s) => s.id === approvedSignatureId);
+    if (chosen) setApprovedSigB64(chosen.dataUrl);
+  }, [approvedById, approvedSignatureId, signaturesForAdmin]);
 
-        if (width > MAX_WIDTH || height > MAX_HEIGHT) {
-          const ratio = Math.min(MAX_WIDTH / width, MAX_HEIGHT / height);
-          width = Math.round(width * ratio);
-          height = Math.round(height * ratio);
-        }
-
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          setter(canvas.toDataURL("image/png"));
-        } else {
-          setter(dataUrl);
-        }
-      };
-      img.src = dataUrl;
-    };
-    reader.readAsDataURL(file);
+  const saveSignatureForAdmin = React.useCallback(async (
+    adminId: string,
+    signatureDataUrl: string,
+    role: "checked" | "verified" | "approved"
+  ): Promise<string | null> => {
+    setSigSavingRole(role);
+    try {
+      const auth = getFirebaseAuth();
+      const u = auth.currentUser;
+      if (!u) throw new Error("Not signed in");
+      const token = await u.getIdToken();
+      const res = await fetch("/api/admin/signature", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ adminId, signatureDataUrl, label: `${role} signature` }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string; signatureId?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to save signature");
+      const newSigId = typeof json.signatureId === "string" ? json.signatureId : "";
+      setAdmins((prev) => prev.map((a) => {
+        if (a.id !== adminId) return a;
+        const prevOpts = Array.isArray(a.signatureOptions) ? a.signatureOptions : [];
+        const nextOpts = newSigId
+          ? [...prevOpts, { id: newSigId, label: `${role} signature`, dataUrl: signatureDataUrl, createdAt: new Date().toISOString() }]
+          : prevOpts;
+        return {
+          ...a,
+          signatureDataUrl,
+          defaultSignatureId: newSigId || a.defaultSignatureId,
+          signatureOptions: nextOpts,
+        };
+      }));
+      toast.success("Signature saved for selected admin");
+      return newSigId || null;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save signature");
+      return null;
+    } finally {
+      setSigSavingRole(null);
+    }
   }, []);
+
+  const removeSignature = React.useCallback(async (
+    adminId: string,
+    signatureId: string
+  ) => {
+    const auth = getFirebaseAuth();
+    const u = auth.currentUser;
+    if (!u) throw new Error("Not signed in");
+    const token = await u.getIdToken();
+    const res = await fetch("/api/admin/signature", {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ adminId, signatureId }),
+    });
+    const json = (await res.json().catch(() => ({}))) as { error?: string; defaultSignatureId?: string | null };
+    if (!res.ok) throw new Error(json.error ?? "Failed to delete signature");
+    setAdmins((prev) =>
+      prev.map((a) => {
+        if (a.id !== adminId) return a;
+        const nextOpts = (a.signatureOptions ?? []).filter((s) => s.id !== signatureId);
+        const nextDefault =
+          typeof json.defaultSignatureId === "string"
+            ? json.defaultSignatureId
+            : nextOpts[0]?.id;
+        const nextDefaultObj = nextOpts.find((s) => s.id === nextDefault);
+        return {
+          ...a,
+          signatureOptions: nextOpts,
+          defaultSignatureId: nextDefault,
+          signatureDataUrl: nextDefaultObj?.dataUrl,
+        };
+      })
+    );
+  }, []);
+
+  const uploadAndPersistSignature = React.useCallback((
+    adminId: string,
+    setter: (val: string | null) => void,
+    role: "checked" | "verified" | "approved"
+  ) => async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const v = await compressSignatureFile(file);
+      setter(v);
+      if (adminId) {
+        const createdId = await saveSignatureForAdmin(adminId, v, role);
+        if (createdId) {
+          if (role === "checked") setCheckedSignatureId(createdId);
+          if (role === "verified") setVerifiedSignatureId(createdId);
+          if (role === "approved") setApprovedSignatureId(createdId);
+        }
+      } else {
+        toast.error("Select admin first, then upload signature");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to process signature image");
+    }
+  }, [compressSignatureFile, saveSignatureForAdmin]);
 
   /* Keep month in current mode when mode changes */
   const prevModeRef = React.useRef(mode);
@@ -516,19 +731,19 @@ export function AdminSalarySheet({
       // Left
       if (checkedSigB64) doc.addImage(checkedSigB64, "PNG", marginX, signatureY - 45, 60, 40);
       doc.text("checked by", marginX, signatureY);
-      doc.text(checkedByName || "editable name", marginX, signatureY + 12);
+      doc.text(adminLabelById.get(checkedById) || "select admin", marginX, signatureY + 12);
       
       // Center
       if (verifiedSigB64) doc.addImage(verifiedSigB64, "PNG", cx - 40, signatureY - 45, 60, 40);
       doc.text("verified by", cx - 40, signatureY);
-      doc.text(verifiedByName || "editable name", cx - 40, signatureY + 12);
+      doc.text(adminLabelById.get(verifiedById) || "select admin", cx - 40, signatureY + 12);
       
       // Right
       if (approvedSigB64) {
         doc.addImage(approvedSigB64, "PNG", pageWidth - marginX - 80, signatureY - 45, 60, 40);
       }
       doc.text("approved by", pageWidth - marginX - 60, signatureY);
-      doc.text(approvedByName || "editable name", pageWidth - marginX - 60, signatureY + 12);
+      doc.text(adminLabelById.get(approvedById) || "select admin", pageWidth - marginX - 60, signatureY + 12);
 
       doc.save(`salary-${data.worker.employeeId ?? data.worker.id ?? "employee"}-${month}.pdf`);
     } catch (e) {
@@ -685,10 +900,10 @@ export function AdminSalarySheet({
                     Checked By Name
                   </label>
                   <SearchableSelect
-                    value={checkedByName}
-                    onValueChange={setCheckedByName}
+                    value={checkedById}
+                    onValueChange={setCheckedById}
                     options={admins.map((a) => ({
-                      value: a.name || a.email || "Admin",
+                      value: a.id,
                       label: a.name || a.email || "Admin",
                       keywords: [a.name || "", a.email || ""],
                     }))}
@@ -699,19 +914,84 @@ export function AdminSalarySheet({
                   <input
                     type="file"
                     accept="image/png"
-                    onChange={createUploadHandler(setCheckedSigB64)}
+                    onChange={uploadAndPersistSignature(checkedById, setCheckedSigB64, "checked")}
                     className="mt-1 text-[10px] text-zinc-500 file:mr-2 file:cursor-pointer file:rounded-md file:border-0 file:bg-zinc-100 file:px-2 file:py-1 file:text-[10px] file:font-medium file:text-zinc-700 hover:file:bg-zinc-200 dark:file:bg-zinc-800 dark:file:text-zinc-300 dark:hover:file:bg-zinc-700"
                   />
+                  {checkedById && signaturesForAdmin(checkedById).length > 0 ? (
+                    <div className="mt-1 flex flex-wrap gap-2 rounded-md border border-zinc-200 bg-zinc-50 p-2 dark:border-white/10 dark:bg-zinc-900/40">
+                      {signaturesForAdmin(checkedById).map((s) => {
+                        const selected = checkedSignatureId === s.id;
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => {
+                              setCheckedSignatureId(s.id);
+                              setCheckedSigB64(s.dataUrl);
+                            }}
+                            className={`group relative overflow-hidden rounded border transition ${
+                              selected
+                                ? "border-cyan-500 ring-1 ring-cyan-500"
+                                : "border-zinc-300 hover:border-zinc-400 dark:border-white/20 dark:hover:border-white/40"
+                            }`}
+                            title={s.label}
+                          >
+                            <img src={s.dataUrl} alt={s.label || "Signature"} className="h-12 w-20 bg-white object-contain dark:bg-zinc-950" />
+                            <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-black/55 px-1 py-0.5 text-[9px] text-white opacity-0 transition group-hover:opacity-100">
+                              {s.label || "Signature"}
+                            </span>
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              className="absolute right-1 top-1 hidden h-5 w-5 items-center justify-center rounded-full bg-red-500/90 text-[10px] font-bold text-white group-hover:flex"
+                              onClick={async (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                try {
+                                  await removeSignature(checkedById, s.id);
+                                  if (checkedSignatureId === s.id) {
+                                    setCheckedSignatureId("");
+                                    setCheckedSigB64(null);
+                                  }
+                                  toast.success("Signature removed");
+                                } catch (err) {
+                                  toast.error(err instanceof Error ? err.message : "Failed to remove signature");
+                                }
+                              }}
+                              onKeyDown={async (e) => {
+                                if (e.key !== "Enter" && e.key !== " ") return;
+                                e.preventDefault();
+                                e.stopPropagation();
+                                try {
+                                  await removeSignature(checkedById, s.id);
+                                  if (checkedSignatureId === s.id) {
+                                    setCheckedSignatureId("");
+                                    setCheckedSigB64(null);
+                                  }
+                                  toast.success("Signature removed");
+                                } catch (err) {
+                                  toast.error(err instanceof Error ? err.message : "Failed to remove signature");
+                                }
+                              }}
+                            >
+                              ×
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  {sigSavingRole === "checked" ? <p className="text-[10px] text-zinc-400">Saving signature…</p> : null}
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400">
                     Verified By Name
                   </label>
                   <SearchableSelect
-                    value={verifiedByName}
-                    onValueChange={setVerifiedByName}
+                    value={verifiedById}
+                    onValueChange={setVerifiedById}
                     options={admins.map((a) => ({
-                      value: a.name || a.email || "Admin",
+                      value: a.id,
                       label: a.name || a.email || "Admin",
                       keywords: [a.name || "", a.email || ""],
                     }))}
@@ -722,19 +1002,84 @@ export function AdminSalarySheet({
                   <input
                     type="file"
                     accept="image/png"
-                    onChange={createUploadHandler(setVerifiedSigB64)}
+                    onChange={uploadAndPersistSignature(verifiedById, setVerifiedSigB64, "verified")}
                     className="mt-1 text-[10px] text-zinc-500 file:mr-2 file:cursor-pointer file:rounded-md file:border-0 file:bg-zinc-100 file:px-2 file:py-1 file:text-[10px] file:font-medium file:text-zinc-700 hover:file:bg-zinc-200 dark:file:bg-zinc-800 dark:file:text-zinc-300 dark:hover:file:bg-zinc-700"
                   />
+                  {verifiedById && signaturesForAdmin(verifiedById).length > 0 ? (
+                    <div className="mt-1 flex flex-wrap gap-2 rounded-md border border-zinc-200 bg-zinc-50 p-2 dark:border-white/10 dark:bg-zinc-900/40">
+                      {signaturesForAdmin(verifiedById).map((s) => {
+                        const selected = verifiedSignatureId === s.id;
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => {
+                              setVerifiedSignatureId(s.id);
+                              setVerifiedSigB64(s.dataUrl);
+                            }}
+                            className={`group relative overflow-hidden rounded border transition ${
+                              selected
+                                ? "border-cyan-500 ring-1 ring-cyan-500"
+                                : "border-zinc-300 hover:border-zinc-400 dark:border-white/20 dark:hover:border-white/40"
+                            }`}
+                            title={s.label}
+                          >
+                            <img src={s.dataUrl} alt={s.label || "Signature"} className="h-12 w-20 bg-white object-contain dark:bg-zinc-950" />
+                            <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-black/55 px-1 py-0.5 text-[9px] text-white opacity-0 transition group-hover:opacity-100">
+                              {s.label || "Signature"}
+                            </span>
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              className="absolute right-1 top-1 hidden h-5 w-5 items-center justify-center rounded-full bg-red-500/90 text-[10px] font-bold text-white group-hover:flex"
+                              onClick={async (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                try {
+                                  await removeSignature(verifiedById, s.id);
+                                  if (verifiedSignatureId === s.id) {
+                                    setVerifiedSignatureId("");
+                                    setVerifiedSigB64(null);
+                                  }
+                                  toast.success("Signature removed");
+                                } catch (err) {
+                                  toast.error(err instanceof Error ? err.message : "Failed to remove signature");
+                                }
+                              }}
+                              onKeyDown={async (e) => {
+                                if (e.key !== "Enter" && e.key !== " ") return;
+                                e.preventDefault();
+                                e.stopPropagation();
+                                try {
+                                  await removeSignature(verifiedById, s.id);
+                                  if (verifiedSignatureId === s.id) {
+                                    setVerifiedSignatureId("");
+                                    setVerifiedSigB64(null);
+                                  }
+                                  toast.success("Signature removed");
+                                } catch (err) {
+                                  toast.error(err instanceof Error ? err.message : "Failed to remove signature");
+                                }
+                              }}
+                            >
+                              ×
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  {sigSavingRole === "verified" ? <p className="text-[10px] text-zinc-400">Saving signature…</p> : null}
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400">
                     Approved By Name
                   </label>
                   <SearchableSelect
-                    value={approvedByName}
-                    onValueChange={setApprovedByName}
+                    value={approvedById}
+                    onValueChange={setApprovedById}
                     options={admins.map((a) => ({
-                      value: a.name || a.email || "Admin",
+                      value: a.id,
                       label: a.name || a.email || "Admin",
                       keywords: [a.name || "", a.email || ""],
                     }))}
@@ -745,9 +1090,74 @@ export function AdminSalarySheet({
                   <input
                     type="file"
                     accept="image/png"
-                    onChange={createUploadHandler(setApprovedSigB64)}
+                    onChange={uploadAndPersistSignature(approvedById, setApprovedSigB64, "approved")}
                     className="mt-1 text-[10px] text-zinc-500 file:mr-2 file:cursor-pointer file:rounded-md file:border-0 file:bg-zinc-100 file:px-2 file:py-1 file:text-[10px] file:font-medium file:text-zinc-700 hover:file:bg-zinc-200 dark:file:bg-zinc-800 dark:file:text-zinc-300 dark:hover:file:bg-zinc-700"
                   />
+                  {approvedById && signaturesForAdmin(approvedById).length > 0 ? (
+                    <div className="mt-1 flex flex-wrap gap-2 rounded-md border border-zinc-200 bg-zinc-50 p-2 dark:border-white/10 dark:bg-zinc-900/40">
+                      {signaturesForAdmin(approvedById).map((s) => {
+                        const selected = approvedSignatureId === s.id;
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => {
+                              setApprovedSignatureId(s.id);
+                              setApprovedSigB64(s.dataUrl);
+                            }}
+                            className={`group relative overflow-hidden rounded border transition ${
+                              selected
+                                ? "border-cyan-500 ring-1 ring-cyan-500"
+                                : "border-zinc-300 hover:border-zinc-400 dark:border-white/20 dark:hover:border-white/40"
+                            }`}
+                            title={s.label}
+                          >
+                            <img src={s.dataUrl} alt={s.label || "Signature"} className="h-12 w-20 bg-white object-contain dark:bg-zinc-950" />
+                            <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-black/55 px-1 py-0.5 text-[9px] text-white opacity-0 transition group-hover:opacity-100">
+                              {s.label || "Signature"}
+                            </span>
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              className="absolute right-1 top-1 hidden h-5 w-5 items-center justify-center rounded-full bg-red-500/90 text-[10px] font-bold text-white group-hover:flex"
+                              onClick={async (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                try {
+                                  await removeSignature(approvedById, s.id);
+                                  if (approvedSignatureId === s.id) {
+                                    setApprovedSignatureId("");
+                                    setApprovedSigB64(null);
+                                  }
+                                  toast.success("Signature removed");
+                                } catch (err) {
+                                  toast.error(err instanceof Error ? err.message : "Failed to remove signature");
+                                }
+                              }}
+                              onKeyDown={async (e) => {
+                                if (e.key !== "Enter" && e.key !== " ") return;
+                                e.preventDefault();
+                                e.stopPropagation();
+                                try {
+                                  await removeSignature(approvedById, s.id);
+                                  if (approvedSignatureId === s.id) {
+                                    setApprovedSignatureId("");
+                                    setApprovedSigB64(null);
+                                  }
+                                  toast.success("Signature removed");
+                                } catch (err) {
+                                  toast.error(err instanceof Error ? err.message : "Failed to remove signature");
+                                }
+                              }}
+                            >
+                              ×
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  {sigSavingRole === "approved" ? <p className="text-[10px] text-zinc-400">Saving signature…</p> : null}
                 </div>
               </div>
             </CardContent>

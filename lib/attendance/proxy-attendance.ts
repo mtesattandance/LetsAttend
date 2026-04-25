@@ -24,7 +24,11 @@ export function canRecordAttendanceFor(
   const subjectRole = (subjectSnap.get("role") as string | undefined) ?? "";
 
   if (callerRole === "admin" || callerRole === "super_admin") {
-    return subjectRole === "employee" || subjectRole === "admin";
+    return (
+      subjectRole === "employee" ||
+      subjectRole === "admin" ||
+      subjectRole === "super_admin"
+    );
   }
 
   if (callerRole !== "employee" || subjectRole !== "employee") {
