@@ -11,7 +11,7 @@ service cloud.firestore {
     }
 
     function isSuperAdminEmail() {
-      return signedIn() && tokenEmail() == 'talibhassan1122@gmail.com';
+      return signedIn() && tokenEmail() == 'mtesattandance@gmail.com';
     }
 
     function userDoc(uid) {
